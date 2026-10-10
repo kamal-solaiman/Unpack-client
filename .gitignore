@@ -1,0 +1,23 @@
+# build artefacts
+build/
+*.o
+*.obj
+*.exe
+*.pdb
+*.ilk
+unpack-client
+make_fake_client
+
+# output of a local run
+unpacked/
+out/
+
+# client files must never be committed
+*.eix
+*.epk
+metin2client.exe
+
+# editors / OS
+.vscode/
+.idea/
+.DS_Store
