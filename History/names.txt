@@ -1,0 +1,5 @@
+# Additional filename hints for History packs (UTF-8, one name per line).
+# A line is used only when its CRC32 exactly equals an entry's name_hash;
+# anything else is ignored. Names kept here are ones that appear neither in
+# History2.exe nor inside any pack payload, so scanning cannot recover them.
+ui_fundamentals.md
