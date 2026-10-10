@@ -1,0 +1,6 @@
+.venv/
+.cache/
+__pycache__/
+*.py[cod]
+alt2/unpacked/
+alt2/extracted/
