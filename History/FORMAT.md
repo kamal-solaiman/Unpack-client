@@ -64,3 +64,28 @@ The examined PE is x86 with preferred image base `0x00400000`. Relevant preferre
 The pack-specific XOR masks are optional arguments to the loader; this supplied archive verifies with **no masks**. The actual key and IV for `workplace.d2` are in its preamble, not hardcoded in this PE. `unpack.py key` pins the analyzed client by SHA-256 and reports these archive header values, verifying the first entry. It does not extract a nonexistent hardcoded EXE key or claim support for modified executables or every other `.d2` pack.
 
 The name hash is CRC32 (standard zlib, seed 0) over the filename string; every recovered name in this sample is lowercase with `/` separators. A 32-bit hash is not reversible on its own, so `unpack.py` reconstructs candidates — strings in `History2.exe`, path and import references inside the decoded payloads, `co_filename` values embedded in `.pyc` bytecode, paired `foo.py`/`foo.pyc` stems, and `History/names.txt` / `--names` lists — and accepts one only when its CRC32 equals the entry's `name_hash` exactly. Distinct candidates hitting the same hash are reported as ambiguity and the file stays unnamed. This recovers **813 / 813** names for the supplied pack; `extract` rebuilds their real folder layout under `files/` (unresolved entries, if any, go to `unknown/` with a content-sniffed suffix). A `.pyc` suffix means Python 2.7 bytecode was preserved, not decompiled. Default per-file and total decoded size limits are 128 MiB and 1 GiB respectively.
+
+## Recovery notes (tool behavior, not verified client behavior)
+
+The default mode is strict: the first invalid record aborts the whole run and
+nothing is published, with the raw field values and offsets in the message.
+`--keep-going` adds a salvage mode for damaged or truncated packs:
+
+- Bad records are collected as `broken` (index level) or `failed` (payload
+  decode level) and recorded in `manifest.json` with per-record `status` and
+  `error`; every salvageable entry is still extracted.
+- After a bad header the walker re-syncs: it scans forward (up to 4 MiB) for
+  the next header whose sizes/offsets look plausible **and** whose successor
+  is also plausible (or ends exactly at EOF), which rejects most false syncs
+  on random payload bytes. Entry indices keep their true archive positions.
+- An all-zero 20-byte record is treated as an end-of-archive terminator.
+- A forward gap between a header and its payload (otherwise sane sizes) is
+  skipped as padding with a warning; backward/overlapping offsets re-sync.
+- Size safety limits still apply in salvage mode; raise them explicitly with
+  `--max-file-size` / `--max-total-size` for trusted large packs.
+
+`manifest.json` rows carry `status` (`ok` / `broken` / `failed`); unnamed but
+verified rows additionally carry `unknown_reason` (`no candidate ... --names`
+vs `ambiguous ...`). The `unknown/` filename suffix is content-sniffed
+(PNG/JPG/GIF/BMP/DDS/TGA/ICO/WAV/OGG/MP3/AVI/WEBP/XML/JSON/TXT/PY/PYC, else
+`.bin`) and is never a recovered name.

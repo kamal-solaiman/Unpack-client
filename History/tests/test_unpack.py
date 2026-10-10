@@ -211,5 +211,204 @@ class FullSampleTests(unittest.TestCase):
             shutil.rmtree(out)
 
 
+class RecoveryTests(unittest.TestCase):
+    """Damaged/truncated packs: strict errors stay loud, --keep-going salvages."""
+
+    def setUp(self):
+        self.dir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.dir.cleanup)
+        self.root = Path(self.dir.name)
+        self.pack = self.root / "multi.d2"
+        self.source = [(f"# file {i}\nprint({i})\n".encode() * 200) for i in range(6)]
+        build_pack(self.pack, self.source)
+
+    def test_strict_truncated_tail_reports_offsets(self):
+        _, _, entries = unpack.read_index(self.pack)
+        cut = entries[4].data_offset + 10
+        bad = self.root / "trunc.d2"
+        bad.write_bytes(self.pack.read_bytes()[:cut])
+        with self.assertRaises(unpack.UnpackError) as ctx:
+            unpack.read_index(bad)
+        message = str(ctx.exception)
+        self.assertIn("truncated payload in record 4", message)
+        self.assertIn("0x", message)  # offsets and sizes for diagnosis
+        self.assertIn("incomplete download", message)
+        self.assertIn("--keep-going", message)
+
+    def test_keep_going_salvages_truncated_tail(self):
+        _, _, entries = unpack.read_index(self.pack)
+        cut = entries[4].data_offset + 10
+        bad = self.root / "trunc.d2"
+        bad.write_bytes(self.pack.read_bytes()[:cut])
+        index = unpack.read_index_full(bad, keep_going=True)
+        self.assertEqual([e.index for e in index.entries], [0, 1, 2, 3])
+        self.assertEqual([b.index for b in index.broken], [4])
+        out = self.root / "out"
+        result = unpack._run(bad, out, 1_000_000, 100_000_000, keep_going=True)
+        self.assertEqual((result.ok, result.total, result.broken, result.failed), (4, 5, 1, 0))
+        manifest = json.loads((out / "manifest.json").read_text())
+        self.assertEqual(manifest["broken"], 1)
+        self.assertEqual([(e["index"], e["status"]) for e in manifest["entries"]],
+                         [(0, "ok"), (1, "ok"), (2, "ok"), (3, "ok"), (4, "broken")])
+        self.assertIsNone(manifest["entries"][4]["output"])
+        self.assertIn("truncated payload", manifest["entries"][4]["error"])
+        # The salvageable prefix is really on disk and byte-identical.
+        self.assertEqual((out / "unknown" / "0000_12345678.py").read_bytes(), self.source[0])
+
+    def test_keep_going_resyncs_past_corrupt_middle_header(self):
+        _, _, entries = unpack.read_index(self.pack)
+        data = bytearray(self.pack.read_bytes())
+        struct.pack_into("<I", data, entries[2].header_offset + 12, 0xFFFFFFF0)
+        bad = self.root / "bad.d2"
+        bad.write_bytes(data)
+        with self.assertRaises(unpack.UnpackError):
+            unpack.read_index(bad)
+        index = unpack.read_index_full(bad, keep_going=True)
+        self.assertEqual([e.index for e in index.entries], [0, 1, 3, 4, 5])
+        self.assertEqual([b.index for b in index.broken], [2])
+        self.assertTrue(any("Re-synced" in w for w in index.warnings))
+        out = self.root / "out"
+        result = unpack._run(bad, out, 1_000_000, 100_000_000, keep_going=True)
+        self.assertEqual((result.ok, result.broken), (5, 1))
+        self.assertEqual((out / "unknown" / "0005_1234567d.py").read_bytes(), self.source[5])
+
+    def test_zero_terminator_record(self):
+        data = self.pack.read_bytes() + b"\x00" * 20
+        pack = self.root / "term.d2"
+        pack.write_bytes(data)
+        with self.assertRaises(unpack.UnpackError) as ctx:
+            unpack.read_index(pack)
+        self.assertIn("--keep-going", str(ctx.exception))
+        index = unpack.read_index_full(pack, keep_going=True)
+        self.assertEqual(len(index.entries), 6)
+        self.assertEqual(index.broken, [])
+        out = self.root / "out"
+        result = unpack._run(pack, out, 1_000_000, 100_000_000, keep_going=True)
+        self.assertEqual((result.ok, result.total), (6, 6))
+
+    def test_failed_payload_is_recorded_not_fatal(self):
+        _, _, entries = unpack.read_index(self.pack)
+        data = bytearray(self.pack.read_bytes())
+        data[entries[1].data_offset + 5] ^= 0xFF
+        bad = self.root / "corrupt.d2"
+        bad.write_bytes(data)
+        out = self.root / "out"
+        result = unpack._run(bad, out, 1_000_000, 100_000_000, keep_going=True)
+        self.assertEqual((result.ok, result.failed), (5, 1))
+        manifest = json.loads((out / "manifest.json").read_text())
+        row = [e for e in manifest["entries"] if e["index"] == 1][0]
+        self.assertEqual(row["status"], "failed")
+        self.assertIsNone(row["output"])
+        self.assertTrue(all(e["status"] == "ok" for e in manifest["entries"] if e["index"] != 1))
+
+    def test_forward_gap_padding_warns_and_accepts(self):
+        # Insert 16 padding bytes before the LAST payload; only its data_offset changes.
+        _, _, entries = unpack.read_index(self.pack)
+        last = entries[-1]
+        raw = self.pack.read_bytes()
+        gap = 16
+        patched = bytearray(raw[:last.header_offset + 8]
+                            + struct.pack("<I", last.data_offset + gap)
+                            + raw[last.header_offset + 12:last.data_offset]
+                            + b"\x00" * gap + raw[last.data_offset:])
+        pack = self.root / "gap.d2"
+        pack.write_bytes(patched)
+        with self.assertRaises(unpack.UnpackError):
+            unpack.read_index(pack)
+        index = unpack.read_index_full(pack, keep_going=True)
+        self.assertEqual(len(index.entries), 6)
+        self.assertTrue(any("padding bytes" in w for w in index.warnings))
+
+    def test_cli_keep_going_exit_code_and_partial_output(self):
+        _, _, entries = unpack.read_index(self.pack)
+        cut = entries[4].data_offset + 10
+        bad = self.root / "trunc.d2"
+        bad.write_bytes(self.pack.read_bytes()[:cut])
+        out = self.root / "cli-out"
+        code = unpack.main(["extract", str(bad), "-o", str(out), "--keep-going",
+                            "--client", str(self.root / "no-client.exe")])
+        self.assertEqual(code, 1)  # published partial output, but signals incompleteness
+        self.assertTrue((out / "manifest.json").is_file())
+        self.assertEqual(len(list((out / "unknown").iterdir())), 4)
+
+
+class SniffingTests(unittest.TestCase):
+    def test_extension_table(self):
+        cases = {
+            b"\x03\xf3\r\ncode": ".pyc",
+            b"\x89PNG\r\n\x1a\n....": ".png",
+            b"\xff\xd8\xff\xe0....": ".jpg",
+            b"GIF89a....": ".gif",
+            b"BM....": ".bmp",
+            b"DDS |...": ".dds",
+            b"\x00\x00\x01\x00....": ".ico",
+            b"OggS....": ".ogg",
+            b"ID3....": ".mp3",
+            b"RIFF\x00\x00\x00\x00WAVE": ".wav",
+            b"RIFF\x00\x00\x00\x00AVI ": ".avi",
+            b'"""docstring-led module\nimport os\n': ".py",
+            b"BTN = \"x\"\nimport ui\n": ".py",
+            b"<?xml version='1.0'?><a/>": ".xml",
+            b"<atlas><img/></atlas>": ".xml",
+            b'{"a": 1}': ".json",
+            b"hello world\nplain text file\n": ".txt",
+            b"\x00\x01\x02\xff\xfe binary": ".bin",
+        }
+        for raw, want in cases.items():
+            with self.subTest(raw=raw[:12]):
+                self.assertEqual(unpack.extension(raw), want)
+        tga = b"\x00" * 100 + b"TRUEVISION-XFILE.\x00\x00\x00\x00\x00\x00\x00\x00\x00"
+        self.assertEqual(unpack.extension(tga), ".tga")
+
+
+class ResolverExtraTests(unittest.TestCase):
+    def test_quoted_stem_plus_asset_extension(self):
+        # Payload references icon/item/001 with no extension; entry is the .png.
+        wanted = "icon/item/001.png"
+        resolver = unpack.NameResolver([unpack.name_hash(wanted)])
+        resolver.scan(b'img = LoadImage("icon/item/001")\n' * 10)
+        resolver.finalize()
+        self.assertEqual(resolver.resolved(unpack.name_hash(wanted)), wanted)
+
+    def test_basename_times_directory_combination(self):
+        # Directory and basename appear in different places; joined they match.
+        wanted = "uiscript/gamewindow.py"
+        resolver = unpack.NameResolver([unpack.name_hash(wanted)])
+        resolver.scan(b'// see gamewindow.py for layout\nPATH = "uiscript/"\n')
+        resolver.finalize()
+        self.assertEqual(resolver.resolved(unpack.name_hash(wanted)), wanted)
+
+    def test_unknown_reason_messages(self):
+        resolver = unpack.NameResolver([0x11111111, 0x22222222])
+        self.assertIn("--names", resolver.unknown_reason(0x11111111))
+        resolver.matches[0x22222222] = {"a.py", "b.py"}
+        self.assertIn("ambiguous", resolver.unknown_reason(0x22222222))
+
+    def test_hints_directory_recovers_asset_name(self):
+        wanted = "d:/ymir work/ui/game/image.sub"
+        hashed = unpack.name_hash(wanted)
+        with tempfile.TemporaryDirectory() as tmp:
+            hints = Path(tmp) / "extracted-text-pack"
+            hints.mkdir()
+            (hints / "ref.py").write_text('IMG = "d:/ymir work/ui/game/image.sub"\n')
+            entry = unpack.Entry(0, 68, 10, 0, 88, 10, hashed)
+            resolver = unpack.build_resolver([entry], client=None, hint_paths=[hints])
+            resolver.finalize()
+        self.assertEqual(resolver.resolved(hashed), wanted)
+
+    def test_manifest_marks_status_and_reason(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            pack = root / "s.d2"
+            build_pack(pack, [b"# lone\n" * 500])
+            out = root / "out"
+            unpack.run(pack, out, 1_000_000, 1_000_000)
+            manifest = json.loads((out / "manifest.json").read_text())
+            row = manifest["entries"][0]
+            self.assertEqual(row["status"], "ok")
+            self.assertIsNone(row["name"])
+            self.assertIn("unknown_reason", row)
+
+
 if __name__ == "__main__":
     unittest.main()
