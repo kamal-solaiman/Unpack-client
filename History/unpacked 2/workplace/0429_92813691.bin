@@ -1,0 +1,478 @@
+'''
+	Author : Reached
+'''
+
+import ui
+import app
+import osfinfo
+import item
+import dbg
+import wndMgr
+import net
+import uiToolTip
+import player
+import localeinfo
+
+import systemSetting
+
+REWARD_ITEMS = []
+REWARD_COUNTS = []
+REWARD_RARITIES = []
+
+REWARDS_ITEMS = {
+	0: [],
+	1: [],
+	2: [],
+	3: [],
+}
+
+REWARDS_COUNTS = {
+	0: [],
+	1: [],
+	2: [],
+	3: [],
+}
+
+REWARDS_RARITIES = {
+	0: [],
+	1: [],
+	2: [],
+	3: [],
+}
+
+
+LEVEL_RANGE = [["0 - 75"], ["76-89"], ["90-104"], ["105-120"]]
+import dbg
+
+def FindIndex(val, pageIndex):
+	index = 0
+	for idx, rar in enumerate(REWARDS_RARITIES[pageIndex]):
+		if rar == val:
+			index = idx
+			break
+	dbg.TraceError("index: %d" % index)
+	dbg.TraceError("index: %d" % REWARDS_ITEMS[pageIndex][14])
+	return index
+
+class PopupRewardItem(ui.Board):
+	def __init__(self):
+		ui.Board.__init__(self)
+		self.Destroy()
+		self.LoadWindow()
+
+	def __del__(self):
+		ui.Board.__del__(self)
+		self.Destroy()
+
+	def Destroy(self):
+		self.childrens = {}
+		self.reward = 0
+
+	def LoadWindow(self):
+		self.SetSize(150,160)
+		self.SetCenterPosition()
+
+		self.itemToolTip = uiToolTip.ItemToolTip()
+		self.itemToolTip.HideToolTip()
+
+		itemImgBg = ui.ImageBox()
+		itemImgBg.SetParent(self)
+		itemImgBg.LoadImage("d:/ymir work/ui/game/wheel/jackpot_slot.png")
+		itemImgBg.SetPosition(55, 20)
+		self.childrens["itemImgBg"] = itemImgBg
+
+		itemImg = ui.ImageBox()
+		itemImg.SetParent(self.childrens["itemImgBg"])
+		itemImg.SetPosition(5, 5)
+		itemImg.SAFE_SetStringEvent("MOUSE_OVER_IN", self.ShowToolTip)
+		itemImg.SAFE_SetStringEvent("MOUSE_OVER_OUT", self.itemToolTip.HideToolTip)
+		self.childrens["itemImg"] = itemImg
+
+		rewardText = ui.TextLine()
+		rewardText.SetParent(self)
+		rewardText.SetPosition(77, 90)
+		rewardText.SetHorizontalAlignCenter()
+		rewardText.SetVerticalAlignCenter()
+		rewardText.SetOutline()
+		rewardText.SetText("")
+		self.childrens["rewardText"] = rewardText
+
+		okBtn = ui.Button()
+		okBtn.SetParent(self)
+		okBtn.SetPosition(35, 120)
+		okBtn.SetUpVisual("d:/ymir work/ui/public/large_button_01.sub")
+		okBtn.SetOverVisual("d:/ymir work/ui/public/large_button_02.sub")
+		okBtn.SetDownVisual("d:/ymir work/ui/public/large_button_03.sub")
+		okBtn.SetText(localeinfo.SPINWHEEL_OK)
+		okBtn.SetEvent(ui.__mem_func__(self.Close))
+		self.childrens["okBtn"] = okBtn
+
+		for k,v in self.childrens.items():
+			v.Show()
+
+	def ShowToolTip(self):
+		self.itemToolTip.SetItemToolTip(self.reward)
+
+	def Open(self, reward):
+		self.reward = reward
+		item.SelectItem(reward)
+		self.childrens["itemImg"].LoadImage(item.GetIconImageFileName())
+		self.childrens["rewardText"].SetText(item.GetItemName())
+		self.Show()
+
+	def Close(self):
+		self.Hide()
+
+class RewardBoard(ui.BoardWithTitleBar):
+	def __init__(self):
+		ui.BoardWithTitleBar.__init__(self)
+		self.Destroy()
+		self.LoadWindow()
+
+	def __del__(self):
+		ui.BoardWithTitleBar.__del__(self)
+		self.Destroy()
+
+	def Destroy(self):
+		self.childrens = {}
+		self.pageIndex = 0
+
+	def LoadWindow(self):
+		self.SetSize(250, 400)
+		self.AddFlag("movable")
+		self.AddFlag("float")
+		if app.ENABLE_WINDOW_SLIDE_EFFECT:
+			self.AddFlag("animated_board")
+		self.SetTitleName(localeinfo.SPINWHEEL_REWARD)
+		self.SetCloseEvent(self.Close)
+		self.SetCenterPosition()
+
+		for i in range(25):
+			slotImg = ui.ImageBox()
+			slotImg.SetParent(self)
+			slotImg.SetPosition(9 + (i % 5) * 46, 80 + (i / 5) * 44)
+			self.childrens["slotImg%d" % i] = slotImg
+
+		jackPotBg = ui.ImageBox()
+		jackPotBg.SetParent(self)
+		jackPotBg.SetPosition(103, 347-5)
+		jackPotBg.LoadImage("d:/ymir work/ui/game/wheel/jackpot_slot.png")
+		self.childrens["jackPotBg"] = jackPotBg
+
+		jackPotSlot = ui.SlotWindow()
+		jackPotSlot.SetParent(self.childrens["jackPotBg"])
+		jackPotSlot.SetPosition(6, 1)
+		jackPotSlot.AppendSlot(0, 1, 1, 32, 32)
+		self.childrens["jackPotSlot"] = jackPotSlot
+
+
+		itemSlot = ui.GridSlotWindow()
+		itemSlot.SetParent(self)
+		itemSlot.SetPosition(15, 84)
+		itemSlot.ArrangeSlot(0, 5, 5, 32, 32, 14, 12)
+		itemSlot.RefreshSlot()
+		self.childrens["itemSlot"] = itemSlot
+
+		levelRangeBg = ui.ImageBox()
+		levelRangeBg.SetParent(self)
+		levelRangeBg.SetPosition(102-72, 46)
+		levelRangeBg.LoadImage("d:/ymir work/ui/game/wheel/level_range_background.png")
+		self.childrens["levelRangeBg"] = levelRangeBg
+
+		levelRangeText = ui.TextLine()
+		levelRangeText.SetParent(self.childrens["levelRangeBg"])
+		levelRangeText.SetPosition(165,3)
+		levelRangeText.SetHorizontalAlignLeft()
+		# levelRangeText.SetCenterPosition()
+		levelRangeText.SetText("{} {}".format(localeinfo.SPINWHEEL_LEVEL_RANGE,LEVEL_RANGE[self.pageIndex][0]))
+		self.childrens["levelRangeText"] = levelRangeText
+
+		leftButton = ui.Button()
+		leftButton.SetParent(self)
+		leftButton.SetPosition(67-58, 46)
+		leftButton.SetUpVisual("d:/ymir work/ui/game/wheel/left_01.png")
+		leftButton.SetOverVisual("d:/ymir work/ui/game/wheel/left_02.png")
+		leftButton.SetDownVisual("d:/ymir work/ui/game/wheel/left_03.png")
+		leftButton.SetEvent(ui.__mem_func__(self.OnLeft))
+		self.childrens["leftButton"] = leftButton
+
+		rightButton = ui.Button()
+		rightButton.SetParent(self)
+		rightButton.SetPosition(223-10, 46)
+		rightButton.SetUpVisual("d:/ymir work/ui/game/wheel/right_01.png")
+		rightButton.SetOverVisual("d:/ymir work/ui/game/wheel/right_02.png")
+		rightButton.SetDownVisual("d:/ymir work/ui/game/wheel/right_03.png")
+		rightButton.SetEvent(ui.__mem_func__(self.OnRight))
+		self.childrens["rightButton"] = rightButton
+
+		jackpotTextBg = ui.ThinBoardCircle()
+		jackpotTextBg.SetParent(self)
+		jackpotTextBg.SetPosition(9, 311)
+		jackpotTextBg.SetSize(230, 27)
+		self.childrens["jackpotTextBg"] = jackpotTextBg
+
+		jackpotText = ui.ImageBox()
+		jackpotText.SetParent(self.childrens["jackpotTextBg"])
+		jackpotText.LoadImage("d:/ymir work/ui/game/wheel/jackpot.png")
+		jackpotText.SetWindowHorizontalAlignCenter()
+		jackpotText.SetWindowVerticalAlignCenter()
+		jackpotText.SetPosition(0, 4)
+		self.childrens["jackpotText"] = jackpotText
+
+		for k,v in self.childrens.items():
+			v.Show()
+
+	def LoadItems(self):
+		for i in range(len(REWARDS_ITEMS[self.pageIndex])):
+			# if REWARDS_RARITIES[self.pageIndex][i] == 2:
+				# continue
+			self.childrens["slotImg%d"%i].LoadImage("d:/ymir work/ui/game/wheel/jackpot_slot_%d.png" % REWARDS_RARITIES[self.pageIndex][i])
+			self.childrens["itemSlot"].SetItemSlot(i, REWARDS_ITEMS[self.pageIndex][i], REWARDS_COUNTS[self.pageIndex][i])
+		jackPotIdx = FindIndex(2, self.pageIndex)
+		self.childrens["jackPotSlot"].SetItemSlot(0, REWARDS_ITEMS[self.pageIndex][jackPotIdx], REWARDS_COUNTS[self.pageIndex][jackPotIdx])
+
+
+	def Open(self):
+		self.LoadItems()
+		self.Show()
+		self.SetCenterPosition()
+
+	def Close(self):
+		self.Hide()
+
+	def OnPressEscapeKey(self):
+		self.Close()
+		return True
+
+	def OnLeft(self):
+		if self.pageIndex-1 < 0:
+			return
+		self.pageIndex -= 1
+		for i in range(len(REWARDS_ITEMS[self.pageIndex])):
+			# if REWARDS_RARITIES[self.pageIndex][i] == 2:
+				# continue
+			self.childrens["slotImg%d"%i].LoadImage("d:/ymir work/ui/game/wheel/jackpot_slot_%d.png" % REWARDS_RARITIES[self.pageIndex][i])
+			self.childrens["itemSlot"].ClearSlot(i)
+			self.childrens["itemSlot"].SetItemSlot(i, REWARDS_ITEMS[self.pageIndex][i], REWARDS_COUNTS[self.pageIndex][i])
+		jackPotIdx = FindIndex(2, self.pageIndex)
+		self.childrens["jackPotSlot"].SetItemSlot(0, REWARDS_ITEMS[self.pageIndex][jackPotIdx], REWARDS_COUNTS[self.pageIndex][jackPotIdx])
+		self.childrens["levelRangeText"].SetText("{} {}".format(localeinfo.SPINWHEEL_LEVEL_RANGE,LEVEL_RANGE[self.pageIndex][0]))
+
+	def OnRight(self):
+		if self.pageIndex+1 > 3:
+			return
+		self.pageIndex += 1
+		for i in range(len(REWARDS_ITEMS[self.pageIndex])):
+			# if REWARDS_RARITIES[self.pageIndex][i] == 2:
+				# continue
+			self.childrens["slotImg%d"%i].LoadImage("d:/ymir work/ui/game/wheel/jackpot_slot_%d.png" % REWARDS_RARITIES[self.pageIndex][i])
+			self.childrens["itemSlot"].ClearSlot(i)
+			self.childrens["itemSlot"].SetItemSlot(i, REWARDS_ITEMS[self.pageIndex][i], REWARDS_COUNTS[self.pageIndex][i])
+		jackPotIdx = FindIndex(2, self.pageIndex)
+		self.childrens["jackPotSlot"].SetItemSlot(0, REWARDS_ITEMS[self.pageIndex][jackPotIdx], REWARDS_COUNTS[self.pageIndex][jackPotIdx])
+		self.childrens["levelRangeText"].SetText("{} {}".format(localeinfo.SPINWHEEL_LEVEL_RANGE,LEVEL_RANGE[self.pageIndex][0]))
+
+class SpinWheel(ui.Board):
+	def __init__(self):
+		ui.Board.__init__(self)
+		self.Destroy()
+		self.LoadWindow()
+
+	def __del__(self):
+		ui.Board.__del__(self)
+		self.Destroy()
+
+	def Destroy(self):
+		self.childrens = {}
+		self.isSpinning = False
+		self.controlList = []
+		self.reward = None
+		self.rewardVnum = 0
+
+	def LoadWindow(self):
+		self.SetSize(200, 70)
+		self.SetPosition(125, wndMgr.GetScreenHeight() - 160)
+		self.Show()
+
+		maskWindow = ui.Window()
+		maskWindow.SetParent(self)
+		maskWindow.SetPosition(8, 12)
+		maskWindow.SetSize(184, 52)
+		self.childrens["maskWindow"] = maskWindow
+
+		for i in range(len(REWARD_ITEMS)):
+			itemBg = ui.ImageBox()
+			itemBg.SetParent(self.childrens["maskWindow"])
+			itemBg.LoadImage("d:/ymir work/ui/game/wheel/jackpot_slot_%d.png"%REWARD_RARITIES[i])
+			itemBg.SetPosition(8 + (i * 48), 1)
+			self.childrens["itemBg%d" % i] = itemBg
+
+			itemImg = ui.ImageBox()
+			itemImg.SetParent(self.childrens["itemBg%d" % i])
+			item.SelectItem(REWARD_ITEMS[i])
+			itemImg.LoadImage(item.GetIconImageFileName())
+			itemImg.SetPosition(7, 7)
+			self.childrens["itemImg%d" % i] = itemImg
+
+			itemCount = ui.TextLine()
+			itemCount.SetParent(self.childrens["itemImg%d" % i])
+			itemCount.SetPosition(itemImg.GetWidth(), itemImg.GetHeight() - 15)
+			itemCount.SetText(str(REWARD_COUNTS[i]))
+			self.childrens["itemCount%d" % i] = itemCount
+
+		middleImage = ui.ImageBox()
+		middleImage.SetParent(self)
+		middleImage.LoadImage("d:/ymir work/ui/game/wheel/needle.png")
+		middleImage.SetPosition(self.GetWidth() / 2  - middleImage.GetWidth() / 2, 8)
+		self.childrens["middleImage"] = middleImage
+
+		for k,v in self.childrens.items():
+			v.Show()
+
+		for i in range(len(REWARD_ITEMS)):
+			self.childrens["itemBg%d"%i].SetClippingMaskWindow(self.childrens["maskWindow"])
+
+	def SpinGamePacket(self):
+		for i in range(len(REWARD_ITEMS)):
+			if REWARD_ITEMS[i] == self.rewardVnum:
+				self.reward = self.childrens["itemBg%d" % i]
+				break
+		self.isSpinning = True
+
+	def OnUpdate(self):
+		if not self.isSpinning:
+			return
+
+		needlePos = self.childrens["middleImage"].GetLocalPosition()[0]
+		for i in range(len(REWARD_ITEMS)):
+			x = self.childrens["itemBg%d" % i].GetLocalPosition()[0]
+			self.childrens["itemBg%d" % i].SetPosition(x-2, 1)
+
+			if self.reward.GetLocalPosition()[0] < needlePos - self.childrens["itemBg%d" % i].GetWidth() / 2:
+				self.isSpinning = False
+				net.SendChatPacket("/spin 1")
+				break
+
+	def SpinReward(self):
+		self.Destroy()
+		self.LoadWindow()
+		self.Close()
+
+	def Open(self, reward):
+		self.rewardVnum = reward
+			
+		if self.rewardVnum not in REWARD_ITEMS:
+			return
+		self.SpinGamePacket()
+		self.Show()
+	
+	def Close(self):
+		self.Hide()
+
+class WheelWindow(ui.ImageBox):
+	def __init__(self):
+		ui.ImageBox.__init__(self)
+		self.Destroy()
+		self.LoadWindow()
+
+	def __del__(self):
+		ui.ImageBox.__del__(self)
+
+	def Destroy(self):
+		self.childrens = {}
+		self.percentage = float(osfinfo.WHEEL_METINSTONE_COUNT)
+
+	def LoadWindow(self):
+		self.LoadImage("d:/ymir work/ui/game/wheel/board.png")
+		self.SetCenterPosition(-400, 300)
+		self.SetSize(200, 200)
+		self.Show()
+
+		self.wndPopUp = PopupRewardItem()
+
+		spinButton = ui.Button()
+		spinButton.SetParent(self)
+		spinButton.SetPosition(0, 6)
+		spinButton.SetUpVisual("d:/ymir work/ui/game/wheel/spin_04.png")
+		spinButton.SetOverVisual("d:/ymir work/ui/game/wheel/spin_04.png")
+		spinButton.SetDownVisual("d:/ymir work/ui/game/wheel/spin_04.png")
+		spinButton.SetEvent(ui.__mem_func__(self.OnClickSpin))
+		self.childrens["spinButton"] = spinButton
+
+		barImg = ui.ExpandedImageBox()
+		barImg.SetParent(self)
+		barImg.LoadImage("d:/ymir work/ui/game/wheel/unavailable.png")
+		barImg.SetPosition(38, 14)
+		barImg.SetPercentage(self.percentage / 5.0, 1.2)
+		self.childrens["barImg"] = barImg
+
+		progressText = ui.TextLine()
+		progressText.SetParent(self.childrens["barImg"])
+		progressText.SetPosition(self.GetWidth() / 2 - 30, self.GetHeight() / 2 - 17)
+		progressText.SetHorizontalAlignCenter()
+		progressText.SetVerticalAlignCenter()
+		progressText.SetOutline()
+		progressText.SetText("%d/5" % self.percentage)
+		self.childrens["progressText"] = progressText
+
+		questionMark = ui.Button()
+		questionMark.SetParent(self)
+		questionMark.SetPosition(143, 13)
+		questionMark.SetUpVisual("d:/ymir work/ui/game/wheel/question_mark.png")
+		questionMark.SetOverVisual("d:/ymir work/ui/game/wheel/question_mark_glow.png")
+		questionMark.SetDownVisual("d:/ymir work/ui/game/wheel/question_mark_down.png")
+		questionMark.SetEvent(ui.__mem_func__(self.ShowRewards))
+		self.childrens["questionMark"] = questionMark
+
+		for k,v in self.childrens.items():
+			v.Show()
+
+	def OnClickSpin(self):
+		net.SendChatPacket("/spin 0")
+
+	def PopupReward(self):
+		self.wndPopUp.Open(osfinfo.rewardItem)
+
+	def ShowRewards(self):
+		if len(REWARDS_ITEMS[0]) == 0: 
+			net.SendChatPacket("/get_rewards")
+
+		interfaceHandler = systemSetting.GetInterfaceHandler()
+		if interfaceHandler:
+			interfaceHandler.OpenRewardsWindow()
+
+	def Reset(self):
+		self.percentage = 0.0
+		self.childrens["spinButton"].SetUpVisual("d:/ymir work/ui/game/wheel/spin_04.png")
+		self.childrens["spinButton"].SetOverVisual("d:/ymir work/ui/game/wheel/spin_04.png")
+		self.childrens["spinButton"].SetDownVisual("d:/ymir work/ui/game/wheel/spin_04.png")
+		self.childrens["barImg"].LoadImage("d:/ymir work/ui/game/wheel/unavailable.png")
+		self.childrens["barImg"].SetPercentage(self.percentage / 5.0, 1.2)
+		self.childrens["progressText"].SetText("0/5")
+
+	def OnUpdate(self):
+		self.UpdatePercentage(osfinfo.WHEEL_METINSTONE_COUNT)
+
+	def UpdatePercentage(self, percentage):
+		self.percentage = percentage
+
+		if self.percentage >= 5.0:
+			self.percentage = 5.0
+			self.childrens["spinButton"].SetUpVisual("d:/ymir work/ui/game/wheel/spin_01.png")
+			self.childrens["spinButton"].SetOverVisual("d:/ymir work/ui/game/wheel/spin_02.png")
+			self.childrens["spinButton"].SetDownVisual("d:/ymir work/ui/game/wheel/spin_02.png")
+			self.childrens["barImg"].LoadImage("d:/ymir work/ui/game/wheel/available.png")
+			self.childrens["progressText"].SetText("5/5")
+		else:
+			self.childrens["barImg"].SetPercentage(self.percentage / 5.0, 1.2)
+			self.childrens["progressText"].SetText("%d/5" % (self.percentage))
+
+	def Open(self):
+		self.Show()
+
+	def Close(self):
+		self.Hide()
+
+
+
+

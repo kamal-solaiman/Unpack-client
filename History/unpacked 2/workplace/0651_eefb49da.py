@@ -1,0 +1,888 @@
+import uiScriptLocale
+import localeinfo
+NEW_PATH = "dragon3/"
+ROOT_PATH = "lava_login/login/"
+
+window = {
+	"name" : "LoginWindow",
+	"sytle" : ("movable",),
+	"x" : 0, "y" : 0,
+	"width" : SCREEN_WIDTH,
+	"height" : SCREEN_HEIGHT,
+	"children" : 
+	(
+		{
+			"name" : "bg_dragon",
+			"type" : "image",
+
+			"x" : 0,
+			"y" : 0,
+
+			"x_scale" : float(SCREEN_WIDTH) / 1920.0,
+			"y_scale" : float(SCREEN_HEIGHT) / 1080.0,
+
+			"width" : SCREEN_WIDTH,# added to fix backround for arabic
+			"height" : SCREEN_HEIGHT,#
+
+			"image" : NEW_PATH + "login/background/bg2.jpg",
+		},
+		{
+			"name" : "bg_syrax",
+			"type" : "image",
+
+			"x" : 0,
+			"y" : 0,
+
+			"x_scale" : float(SCREEN_WIDTH) / 1920.0,
+			"y_scale" : float(SCREEN_HEIGHT) / 1080.0,
+
+			"width" : SCREEN_WIDTH,# added to fix backround for arabic
+			"height" : SCREEN_HEIGHT,#
+
+			"image" : NEW_PATH + "login/background/bg6.jpg",
+		},
+		# {
+			# "name" : "Background",
+			# "type" : "ani_image",
+
+			# "x" : 0,
+			# "y" : 0,
+
+			# "x_scale" : float(SCREEN_WIDTH) / 1920.0,
+			# "y_scale" : float(SCREEN_HEIGHT) / 1080.0,
+
+			# "width" : SCREEN_WIDTH,# added to fix backround for arabic
+			# "height" : SCREEN_HEIGHT,#
+
+			# "delay" : 3,
+			# "images" :
+			# (
+				# NEW_PATH + "login/background/login00000.dds",
+				# NEW_PATH + "login/background/login00001.dds",
+				# NEW_PATH + "login/background/login00002.dds",
+				# NEW_PATH + "login/background/login00003.dds",
+				# NEW_PATH + "login/background/login00004.dds",
+				# NEW_PATH + "login/background/login00005.dds",
+				# NEW_PATH + "login/background/login00006.dds",
+				# NEW_PATH + "login/background/login00007.dds",
+				# NEW_PATH + "login/background/login00008.dds",
+				# NEW_PATH + "login/background/login00009.dds",
+				# NEW_PATH + "login/background/login00010.dds",
+				# NEW_PATH + "login/background/login00011.dds",
+				# NEW_PATH + "login/background/login00012.dds",
+				# NEW_PATH + "login/background/login00013.dds",
+				# NEW_PATH + "login/background/login00014.dds",
+				# NEW_PATH + "login/background/login00015.dds",
+				# NEW_PATH + "login/background/login00016.dds",
+				# NEW_PATH + "login/background/login00017.dds",
+				# NEW_PATH + "login/background/login00018.dds",
+				# NEW_PATH + "login/background/login00019.dds",
+				# NEW_PATH + "login/background/login00020.dds",
+				# NEW_PATH + "login/background/login00021.dds",
+				# NEW_PATH + "login/background/login00022.dds",
+				# NEW_PATH + "login/background/login00023.dds",
+				# NEW_PATH + "login/background/login00024.dds",
+				# NEW_PATH + "login/background/login00025.dds",
+				# NEW_PATH + "login/background/login00026.dds",
+				# NEW_PATH + "login/background/login00027.dds",
+				# NEW_PATH + "login/background/login00028.dds",
+				# NEW_PATH + "login/background/login00029.dds",
+				# NEW_PATH + "login/background/login00030.dds",
+				# NEW_PATH + "login/background/login00031.dds",
+				# NEW_PATH + "login/background/login00032.dds",
+				# NEW_PATH + "login/background/login00033.dds",
+				# NEW_PATH + "login/background/login00034.dds",
+				# NEW_PATH + "login/background/login00035.dds",
+				# NEW_PATH + "login/background/login00036.dds",
+				# NEW_PATH + "login/background/login00037.dds",
+				# NEW_PATH + "login/background/login00038.dds",
+				# NEW_PATH + "login/background/login00039.dds",
+				# NEW_PATH + "login/background/login00040.dds",
+				# NEW_PATH + "login/background/login00041.dds",
+				# NEW_PATH + "login/background/login00042.dds",
+				# NEW_PATH + "login/background/login00043.dds",
+				# NEW_PATH + "login/background/login00044.dds",
+				# NEW_PATH + "login/background/login00045.dds",
+				# NEW_PATH + "login/background/login00046.dds",
+				# NEW_PATH + "login/background/login00047.dds",
+				# NEW_PATH + "login/background/login00048.dds",
+				# NEW_PATH + "login/background/login00049.dds",
+				# NEW_PATH + "login/background/login00050.dds",
+				# NEW_PATH + "login/background/login00051.dds",
+				# NEW_PATH + "login/background/login00052.dds",
+				# NEW_PATH + "login/background/login00053.dds",
+				# NEW_PATH + "login/background/login00054.dds",
+				# NEW_PATH + "login/background/login00055.dds",
+				# NEW_PATH + "login/background/login00056.dds",
+				# NEW_PATH + "login/background/login00057.dds",
+				# NEW_PATH + "login/background/login00058.dds",
+				# NEW_PATH + "login/background/login00059.dds",
+				# NEW_PATH + "login/background/login00060.dds",
+				# NEW_PATH + "login/background/login00061.dds",
+				# NEW_PATH + "login/background/login00062.dds",
+				# NEW_PATH + "login/background/login00063.dds",
+				# NEW_PATH + "login/background/login00064.dds",
+				# NEW_PATH + "login/background/login00065.dds",
+				# NEW_PATH + "login/background/login00066.dds",
+				# NEW_PATH + "login/background/login00067.dds",
+				# NEW_PATH + "login/background/login00068.dds",
+				# NEW_PATH + "login/background/login00069.dds",
+				# NEW_PATH + "login/background/login00070.dds",
+				# NEW_PATH + "login/background/login00071.dds",
+				# NEW_PATH + "login/background/login00072.dds",
+				# NEW_PATH + "login/background/login00073.dds",
+				# NEW_PATH + "login/background/login00074.dds",
+				# NEW_PATH + "login/background/login00075.dds",
+				# NEW_PATH + "login/background/login00076.dds",
+				# NEW_PATH + "login/background/login00077.dds",
+				# NEW_PATH + "login/background/login00078.dds",
+				# NEW_PATH + "login/background/login00079.dds",
+				# NEW_PATH + "login/background/login00080.dds",
+				# NEW_PATH + "login/background/login00081.dds",
+				# NEW_PATH + "login/background/login00082.dds",
+				# NEW_PATH + "login/background/login00083.dds",
+				# NEW_PATH + "login/background/login00084.dds",
+				# NEW_PATH + "login/background/login00085.dds",
+				# NEW_PATH + "login/background/login00086.dds",
+				# NEW_PATH + "login/background/login00087.dds",
+				# NEW_PATH + "login/background/login00088.dds",
+				# NEW_PATH + "login/background/login00089.dds",
+				# NEW_PATH + "login/background/login00090.dds",
+				# NEW_PATH + "login/background/login00091.dds",
+				# NEW_PATH + "login/background/login00092.dds",
+				# NEW_PATH + "login/background/login00093.dds",
+				# NEW_PATH + "login/background/login00094.dds",
+				# NEW_PATH + "login/background/login00095.dds",
+			# ),
+		# },
+		{
+			"name": "exit_button",
+			"type": "button",
+
+			"x": SCREEN_WIDTH - 25 - 20 - 30,
+			"y": 20,
+
+			"default_image": ROOT_PATH + "close_button_01.sub",
+			"over_image": ROOT_PATH + "close_button_02.sub",
+			"down_image": ROOT_PATH + "close_button_02.sub",
+		},
+		{
+			"name" : "newselecttitle",
+			"type" : "image",
+			"vertical_align" : "center",
+			"horizontal_align" : "center",
+			"x" : 0,
+			"y" : -190,
+			"image" : NEW_PATH + "login/server_list.png",
+		},
+		{
+			"name" : "newselect1",
+			"type" : "radio_button",
+			"vertical_align" : "center",
+			"horizontal_align" : "center",
+			"x" : 145 - 73,
+			"y" : 64 - 199 + 2,
+			"default_image" : NEW_PATH + "login/srv_drg_normal.png",
+			"over_image" : NEW_PATH + "login/srv_drg_hover.png",
+			"down_image" : NEW_PATH + "login/srv_drg_down.png",
+		},
+		{
+			"name" : "newselect2",
+			"type" : "radio_button",
+			"vertical_align" : "center",
+			"horizontal_align" : "center",
+			"x" : 0 - 73,
+			"y" : 66 - 199 + 2,
+			"default_image" : NEW_PATH + "login/srv_syr_normal.png",
+			"over_image" : NEW_PATH + "login/srv_syr_hover.png",
+			"down_image" : NEW_PATH + "login/srv_syr_down.png",
+		},
+		{
+			"name" : "board",
+			"type" : "image",
+			"x" : 0, "y" : 70,#138
+			"image" : NEW_PATH + "login/bg.png",
+			"vertical_align" : "center",
+			"horizontal_align" : "center",
+			"children" :
+			(
+			
+				# New Server Select 
+				{
+					"name" : "selectsvnew",
+					"type" : "window",
+					"x" : 0, "y" : 0,
+					"width" : 290, "height" : 305,
+					"horizontal_align" : "center",
+					"children" :
+					(
+						# {
+							# "name" : "newselect1",
+							# "type" : "button",
+							# "style" : ("ltr",),
+							# "x" : 143, "y" : 64-50,
+							# "default_image" : NEW_PATH + "login/srv_drg_normal.png",
+							# "over_image" : NEW_PATH + "login/srv_drg_hover.png",
+							# "down_image" : NEW_PATH + "login/srv_drg_down.png",
+						# },
+						# {
+							# "name" : "newselect2",
+							# "type" : "button",
+							# "x" : 0, "y" : 69-50,
+							# "default_image" : NEW_PATH + "login/srv_syr_normal.png",
+							# "over_image" : NEW_PATH + "login/srv_syr_hover.png",
+							# "down_image" : NEW_PATH + "login/srv_syr_down.png",
+						# },
+					 ),
+				},
+				# Board Center
+				{
+					"name" : "BoardCenter",
+					"type" : "window",
+					"x" : 0, "y" : 0,
+					"width" : 290, "height" : 305,
+					"horizontal_align" : "center",
+					"children" :
+					(
+						{
+							"name" : "header1",
+							"type" : "image",
+							"x" : -4, "y" : 75,
+							"image" : NEW_PATH + "login/header_text.png",
+							"horizontal_align" : "center",
+						},
+						{
+							"name" : "input_user",
+							"type" : "image",
+							"x" : 0, "y" : 105,
+							"image" : NEW_PATH + "login/input_account.png",
+							"horizontal_align" : "center",
+							"children" : 
+							(
+								{
+									"name" : "id",
+									"type" : "editline",
+									"x" : 40, "y" : 10,
+									"width" : 200, "height" : 16,
+									"input_limit": 16,
+								},
+							),
+						},
+						{
+							"name" : "input_password",
+							"type" : "image",
+							"x" : 0, "y" : 105+44,
+							"image" : NEW_PATH + "login/input_password.png",
+							"horizontal_align" : "center",
+							"children" : 
+							(
+								{
+									"name" : "pwd",
+									"type" : "editline",
+									"x" : 40, "y" : 10,
+									"width" : 200, "height" : 16,
+									"input_limit": 16,
+									"secret_flag": 1,
+								},
+							),
+						},
+						{
+							"name" : "login_button",
+							"type" : "button",
+							"horizontal_align" : "center",
+							"x" : 0, "y" :203,
+							"default_image" : NEW_PATH + "login/btn_login_01.png",
+							"over_image" : NEW_PATH + "login/btn_login_02.png",
+							"down_image" : NEW_PATH + "login/btn_login_03.png",
+						},
+						# {
+							# "name" : "header2",
+							# "type" : "image",
+							# "x" : -4, "y" : 250,
+							# "horizontal_align" : "center",
+							# "image" : NEW_PATH + "login/register_text.png",
+						# },
+						{
+							"name" : "register_btn",
+							"type" : "button",
+							"x" : -4, "y" : 250,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/register_text.png",
+							"over_image" : NEW_PATH + "login/register_text_hover.png",
+							"down_image" : NEW_PATH + "login/register_text_down.png",
+						},
+					),
+				},#Board Left
+				{
+					"name" : "BoardLeft",
+					"type" : "window",
+					"x" : 530, "y" : 0,
+					"width" : 240, "height" : 305,
+					#"horizontal_align" : "left",
+					"children" :
+					(
+						{
+							"name" : "select_ch1",
+							"type" : "image",
+							"x" : 0, "y" : 100,
+							"horizontal_align" : "center",
+							"image" : NEW_PATH + "login/btn_channel_01.png",
+							"children" : 
+							(
+								{
+									"name" : "state_ch1",
+									"type" : "text",
+									"x" : 0, "y" : 7,
+									"fontsize":"LARGE",
+									"text" : localeinfo.PANEL_CHANNEL_1,
+									"horizontal_align" : "center",
+									"text_horizontal_align" : "center",
+								},
+								{
+									"name" : "ch1_online", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "ch1_offline", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "select_btn_ch1",
+									"type" : "radio_button",
+									"x" : 0, "y" : 0,
+									"horizontal_align" : "center",
+									"default_image" : NEW_PATH + "login/btn_empty.png",
+									"over_image" : NEW_PATH + "login/btn_empty.png",
+									"down_image" : NEW_PATH + "login/btn_select_channel_01.png",
+								},
+							),
+						},
+						{
+							"name" : "select_ch2",
+							"type" : "image",
+							"x" : 0, "y" : 100+40,
+							"horizontal_align" : "center",
+							"image" : NEW_PATH + "login/btn_channel_01.png",
+							"children" : 
+							(
+								{
+									"name" : "state_ch1",
+									"type" : "text",
+									"x" : 0, "y" : 7,
+									"fontsize":"LARGE",
+									"text" : localeinfo.PANEL_CHANNEL_2,
+									"horizontal_align" : "center",
+									"text_horizontal_align" : "center",
+								},
+								{
+									"name" : "ch2_online", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "ch2_offline", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "select_btn_ch2",
+									"type" : "radio_button",
+									"x" : 0, "y" : 0,
+									"horizontal_align" : "center",
+									"default_image" : NEW_PATH + "login/btn_empty.png",
+									"over_image" : NEW_PATH + "login/btn_empty.png",
+									"down_image" : NEW_PATH + "login/btn_select_channel_01.png",
+								},
+							),
+						},
+						{
+							"name" : "select_ch3",
+							"type" : "image",
+							"x" : 0, "y" : 100+80,
+							"horizontal_align" : "center",
+							"image" : NEW_PATH + "login/btn_channel_01.png",
+							"children" : 
+							(
+								{
+									"name" : "state_ch3",
+									"type" : "text",
+									"x" : 0, "y" : 7,
+									"fontsize":"LARGE",
+									"text" : localeinfo.PANEL_CHANNEL_3,
+									"horizontal_align" : "center",
+									"text_horizontal_align" : "center",
+								},
+								{
+									"name" : "ch3_online", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "ch3_offline", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "select_btn_ch3",
+									"type" : "radio_button",
+									"x" : 0, "y" : 0,
+									"horizontal_align" : "center",
+									"default_image" : NEW_PATH + "login/btn_empty.png",
+									"over_image" : NEW_PATH + "login/btn_empty.png",
+									"down_image" : NEW_PATH + "login/btn_select_channel_01.png",
+								},
+							),
+						},
+						{
+							"name" : "select_ch4",
+							"type" : "image",
+							"x" : 0, "y" : 100+120,
+							"horizontal_align" : "center",
+							"image" : NEW_PATH + "login/btn_channel_01.png",
+							"children" : 
+							(
+								{
+									"name" : "state_ch4",
+									"type" : "text",
+									"x" : 0, "y" : 7,
+									"fontsize":"LARGE",
+									"text" : localeinfo.PANEL_CHANNEL_4,
+									"horizontal_align" : "center",
+									"text_horizontal_align" : "center",
+								},
+								{
+									"name" : "ch4_online", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "ch4_offline", "type" : "image", "x" : 3, "y" : 2, "image" : NEW_PATH + "login/server_status_on.png",
+								},
+								{
+									"name" : "select_btn_ch4",
+									"type" : "radio_button",
+									"x" : 0, "y" : 0,
+									"horizontal_align" : "center",
+									"default_image" : NEW_PATH + "login/btn_empty.png",
+									"over_image" : NEW_PATH + "login/btn_empty.png",
+									"down_image" : NEW_PATH + "login/btn_select_channel_01.png",
+								},
+							),
+						},
+					),
+				},#Board Right
+				{
+					"name" : "BoardRight_1",
+					"type" : "window",
+					"x" : 0, "y" : 0,
+					"width" : 240, "height" : 305,
+					#"horizontal_align" : "right",
+					"children" :
+					(
+						{
+							"name" : "f1_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f1_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f1_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f1_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f2_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+40,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f2_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f2_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f2_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f3_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+80,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f3_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f3_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f3_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f4_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+120,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f4_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f4_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f4_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+					),
+				},#Board right 1 end
+				{
+					"name" : "fast_login_btn",
+					"type" : "button",
+					"x" : 20, "y" : 310,
+					"default_image" : NEW_PATH + "login/btn_quick_01.png",
+					"over_image" : NEW_PATH + "login/btn_quick_02.png",
+					"down_image" : NEW_PATH + "login/btn_quick_03.png",
+				},
+				{
+					"name" : "BoardRight_2",
+					"type" : "window",
+					"x" : 0, "y" : 0,
+					"width" : 240, "height" : 305,
+					#"horizontal_align" : "right",
+					"children" :
+					(
+						{
+							"name" : "f5_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f5_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f5_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f5_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f6_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+40,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f6_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f6_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f6_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f7_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+80,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f7_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f7_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f7_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f8_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+120,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f8_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f8_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f8_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+					),
+				},#Board right 2 end
+				
+				
+				{
+					"name" : "BoardRight_3",
+					"type" : "window",
+					"x" : 0, "y" : 0,
+					"width" : 240, "height" : 305,
+					#"horizontal_align" : "right",
+					"children" :
+					(
+						{
+							"name" : "f9_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f9_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f9_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f9_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f10_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+40,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f10_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f10_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f10_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f11_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+80,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f11_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f11_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f11_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+						{
+							"name" : "f12_login_button",
+							"type" : "button",
+							"x" : 0, "y" : 100+120,
+							"horizontal_align" : "center",
+							"default_image" : NEW_PATH + "login/btn_account_01.png",
+							"over_image" : NEW_PATH + "login/btn_account_02.png",
+							"down_image" : NEW_PATH + "login/btn_account_03.png",
+							"children" : 
+							(
+								{ "name" : "f12_account_text", "type" : "text", "x" : 65, "y" : 8, "fontsize": "LARGE", "text" : "Free Slot",},
+								{
+									"name" : "f12_save_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_check_01.png",
+									"over_image" : NEW_PATH + "login/btn_check_02.png",
+									"down_image" : NEW_PATH + "login/btn_check_03.png",
+								},
+								{
+									"name" : "f12_delete_button",
+									"type" : "button",
+									"x" : 27, "y" : 12,
+									#"horizontal_align" : "right",
+									"default_image" : NEW_PATH + "login/btn_cancel_01.png",
+									"over_image" : NEW_PATH + "login/btn_cancel_02.png",
+									"down_image" : NEW_PATH + "login/btn_cancel_03.png",
+								},
+							),
+						},
+					),
+				},#Board right 3 end
+				
+				{
+					"name" : "account_dropdown",
+					"type" : "button",
+					"x" : 0, "y" : 100+152,
+					#"horizontal_align" : "right",
+					"default_image" : NEW_PATH + "login/btn_drop_01.png",
+					"over_image" : NEW_PATH + "login/btn_drop_02.png",
+					"down_image" : NEW_PATH + "login/btn_drop_03.png",
+				},
+			),
+		},
+
+	),
+}
