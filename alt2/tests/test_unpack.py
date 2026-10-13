@@ -195,6 +195,58 @@ class ArchiveTests(unittest.TestCase):
         self.assertEqual((out / manifest["entries"][2]["output"]).read_bytes(), b"")
         self.assertFalse(list(self.root.glob(".alt2-unpack-*")))
 
+    def test_unknown_files_get_content_based_extension(self):
+        # empty.txt stays unnamed; it must keep a type label instead of a
+        # misleading .bin (empty content is labelled "empty" -> .bin).
+        entries = unpack.read_index(self.archive)
+        out = self.root / "out"
+        with contextlib.redirect_stderr(io.StringIO()):
+            summary = unpack.process_archive(self.archive, entries, self.info,
+                                             unpack.NameResolver(e.name_hash for e in entries), out)
+        self.assertEqual(summary["unknown"], 1)
+        self.assertEqual(summary["unknown_types"], {"empty": 1})
+        manifest = json.loads((out / "manifest.json").read_text())
+        record = manifest["entries"][2]
+        self.assertEqual(record["detected_type"], "empty")
+        self.assertTrue(record["output"].startswith("unknown/0002_"))
+        self.assertTrue(record["output"].endswith(".bin"))
+
+    def test_generation_recovers_name_inside_extract(self):
+        # The directory lives in one payload and the bare basename in another;
+        # extraction must pair them during the generation phase. The two files
+        # whose names are referenced nowhere stay under unknown/ with content
+        # labels instead of a misleading .bin.
+        tga_header = bytes([0, 0, 2]) + b"\x00" * 9 + bytes([0x20, 0, 0x20, 0, 32]) + b"\x00" * 8
+        items = [("dirs.py", b'BASE = "tree/board/"\n', False),
+                 ("page.txt", b'img src="top.tga"\n', False),
+                 ("tree/board/top.tga", tga_header, False)]
+        self.archive.write_bytes(archive_bytes(items))
+        entries = unpack.read_index(self.archive)
+        out = self.root / "generated"
+        with contextlib.redirect_stderr(io.StringIO()):
+            summary = unpack.process_archive(self.archive, entries, self.info,
+                                             unpack.NameResolver(e.name_hash for e in entries), out)
+        self.assertEqual(summary["named"], 1)
+        self.assertEqual(summary["unknown_types"], {"py": 1, "txt": 1})
+        self.assertTrue((out / "files/tree/board/top.tga").read_bytes(), tga_header)
+        unknown = sorted(p.name for p in (out / "unknown").iterdir())
+        self.assertEqual([p.rsplit(".", 1)[1] for p in unknown], ["py", "txt"])
+
+    def test_unknown_binary_without_references(self):
+        payload = bytes(range(1, 40))
+        items = [("opaque.bin", payload, False)]
+        self.archive.write_bytes(archive_bytes(items))
+        entries = unpack.read_index(self.archive)
+        out = self.root / "opaque"
+        with contextlib.redirect_stderr(io.StringIO()):
+            summary = unpack.process_archive(self.archive, entries, self.info,
+                                             unpack.NameResolver(e.name_hash for e in entries), out)
+        self.assertEqual(summary["named"], 0)
+        self.assertEqual(summary["unknown_types"].get("bin"), 1)
+        unknown = list((out / "unknown").iterdir())
+        self.assertEqual(len(unknown), 1)
+        self.assertTrue(unknown[0].name.endswith(".bin"))
+
     def test_no_overwrite(self):
         entries = unpack.read_index(self.archive)
         out = self.root / "out"
@@ -251,8 +303,41 @@ class NameTests(unittest.TestCase):
         names = ["foo.py", "bar.py", "ui/button.png", "ui/board/bg.tga"]
         resolver = unpack.NameResolver(map(unpack.name_hash, names))
         resolver.scan(b'import foo, bar\nPATH = "ui/"\nBOARD = PATH + "board/"\nx = "button.png"\ny = "bg.tga"\n')
+        resolver.generate()
         for name in names:
             self.assertEqual(resolver.resolved(unpack.name_hash(name)), name)
+
+    def test_cross_file_directory_and_fragment_generation(self):
+        # The directory and the bare basename appear in different payloads;
+        # only the generate() phase can pair them.
+        target = unpack.name_hash("skill_tree/board/top.tga")
+        resolver = unpack.NameResolver([target])
+        resolver.scan(b'path = "skill_tree/board/"\n')
+        self.assertIsNone(resolver.resolved(target))
+        resolver.scan(b'link href="top.tga"\n')
+        self.assertIsNone(resolver.resolved(target))
+        resolver.generate()
+        self.assertEqual(resolver.resolved(target), "skill_tree/board/top.tga")
+
+    def test_short_stem_generation(self):
+        target = unpack.name_hash("skill_tree/direction/7.tga")
+        resolver = unpack.NameResolver([target])
+        resolver.scan(b'dir = "skill_tree/direction/"\n')
+        resolver.generate()
+        self.assertEqual(resolver.resolved(target), "skill_tree/direction/7.tga")
+
+    def test_token_extension_generation(self):
+        target = unpack.name_hash("uiskyboxchanger.py")
+        resolver = unpack.NameResolver([target])
+        resolver.scan(b"self.handler = SkyBoxChanger()\n")
+        resolver.generate()
+        self.assertEqual(resolver.resolved(target), "uiskyboxchanger.py")
+
+    def test_generation_never_names_unmatched_hashes(self):
+        resolver = unpack.NameResolver([0x11223344, 0x55667788])
+        resolver.scan(b'A = "ui/"\nbackground.png\nSkyBoxChanger()\n')
+        resolver.generate()
+        self.assertEqual(resolver.matches, {})
 
     def test_unsafe_matching_name_ignored(self):
         resolver = unpack.NameResolver([unpack.name_hash("../bad.py")])
@@ -267,6 +352,44 @@ class NameTests(unittest.TestCase):
     def test_static_hints_do_not_evaluate_code(self):
         data = b'A = "ui/"\nB = A + "board/"\nC = __import__("os").system("bad")\nD = C + "x/"\n'
         self.assertEqual(list(unpack.static_string_hints(data)), ["ui/", "ui/board/"])
+
+
+class DetectTypeTests(unittest.TestCase):
+    def test_magic_signatures(self):
+        cases = [
+            (b"\x89PNG\r\n\x1a\n" + b"\x00" * 16, "png"),
+            (b"DDS |\x00\x00\x00" + b"\x00" * 16, "dds"),
+            (b"\xff\xd8\xff\xe0" + b"\x00" * 16, "jpg"),
+            (b"RIFF\x24\x00\x00\x00AVI LIST" + b"\x00" * 16, "avi"),
+            (b"RIFF\x24\x00\x00\x00WAVEfmt " + b"\x00" * 16, "wav"),
+            (b"RIFF\x24\x00\x00\x00XXXX" + b"\x00" * 16, "riff"),
+            (b"OggS\x00\x02" + b"\x00" * 16, "ogg"),
+            (b"Granny2 31\x00" + b"\x00" * 16, "gr2"),
+            (b"\x00\x01\x00\x00\x00" + b"\x00" * 16, "ttf"),
+            (b"BM\x36\x00\x00\x00" + b"\x00" * 16, "bmp"),
+            (b"", "empty"),
+            (b"\x00\x01\x02\x03\x7f\x80\xff" * 3, "bin"),
+        ]
+        for data, expected in cases:
+            with self.subTest(expected=expected):
+                self.assertEqual(unpack.detect_content_type(data), expected)
+
+    def test_tga_footer_and_header(self):
+        self.assertEqual(unpack.detect_content_type(b"\x00" * 32 + b"TRUEVISION-XFILE.\x00"), "tga")
+        header = bytes([0, 0, 2]) + b"\x00" * 9 + bytes([0x20, 0, 0x20, 0, 32]) + b"\x00" * 8
+        self.assertEqual(unpack.detect_content_type(header), "tga")
+        # Implausible width/height must not be reported as TGA.
+        bad = bytes([0, 0, 2]) + b"\x00" * 9 + bytes([0xF0, 0xFF, 0xF0, 0xFF, 32]) + b"\x00" * 8
+        self.assertNotEqual(unpack.detect_content_type(bad), "tga")
+
+    def test_text_kinds(self):
+        self.assertEqual(unpack.detect_content_type(b"import app\r\nimport ui\r\n"), "py")
+        self.assertEqual(unpack.detect_content_type(b"CHAT_RGB_TALK = (255, 255, 255)\r\n"), "py")
+        self.assertEqual(unpack.detect_content_type(b'<?xml version="1.0" encoding="UTF-8"?>\n<a/>\n'), "xml")
+        self.assertEqual(unpack.detect_content_type(b"ScriptType RaceDataScript\r\nBaseModelFileName x\r\n"), "msm")
+        self.assertEqual(unpack.detect_content_type(b"ScriptType RaceDataScript\r\nMotionFileName y\r\n"), "msa")
+        self.assertEqual(unpack.detect_content_type(b"just some release notes\r\n"), "txt")
+        self.assertEqual(unpack.detect_content_type(b"\x00\x01binary gibberish\r\n"), "bin")
 
 
 @unittest.skipUnless((unpack.HERE / "metin2client.exe").exists() and (unpack.HERE / "data/root").exists(),

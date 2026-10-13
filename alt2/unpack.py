@@ -9,6 +9,7 @@ from __future__ import annotations
 import argparse
 from dataclasses import asdict, dataclass
 import hashlib
+import itertools
 import json
 from pathlib import Path
 import re
@@ -241,6 +242,98 @@ ASSIGNMENT_PATTERN = re.compile(rb"(?m)^[ \t]*((?:self\.)?[A-Za-z_]\w*)[ \t]*=[ 
 STRING_TOKEN = r'''(?:"[A-Za-z0-9_./:\\ -]{0,240}"|'[A-Za-z0-9_./:\\ -]{0,240}'|(?:self\.)?[A-Za-z_]\w*)'''
 STRING_EXPRESSION = re.compile(STRING_TOKEN + r"(?:\s*\+\s*" + STRING_TOKEN + r")*")
 
+# Bare-identifier tokens (lowercased) feed the last-resort name generator.
+TOKEN_PATTERN = re.compile(rb"[A-Za-z_][A-Za-z0-9_]{1,40}")
+
+# Extension inventory used by candidate generation; ordered for determinism.
+ALL_EXTENSIONS = (
+    ".pyc", ".pyo", ".py", ".msm", ".msa", ".mse", ".msf", ".txt", ".xml", ".json",
+    ".cfg", ".ini", ".sub", ".dds", ".tga", ".png", ".jpg", ".jpeg", ".bmp", ".psd",
+    ".gr2", ".wav", ".mp3", ".ogg", ".avi", ".ttf", ".otf", ".def", ".bin", ".dat",
+    ".sct", ".atr", ".raw", ".wtr",
+)
+# Pairing every token with every extension is wasteful; keep the common subset.
+TOKEN_EXTENSIONS = (
+    ".pyc", ".py", ".msm", ".msa", ".txt", ".xml", ".dds", ".tga", ".png", ".jpg",
+    ".bmp", ".gr2", ".wav", ".ogg", ".avi",
+)
+# Very short basenames are enumerated exhaustively; images and scripts dominate there.
+STEM_CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789_"
+STEM_EXTENSIONS = (".png", ".tga", ".dds", ".jpg", ".py", ".wav", ".ogg", ".txt")
+
+# detected_type -> extension used for files whose original name stays unknown.
+TYPE_EXTENSIONS = {
+    "png": "png", "jpg": "jpg", "dds": "dds", "avi": "avi", "wav": "wav",
+    "ogg": "ogg", "gr2": "gr2", "ttf": "ttf", "bmp": "bmp", "tga": "tga",
+    "xml": "xml", "msm": "msm", "msa": "msa", "py": "py", "txt": "txt",
+}
+
+
+def detect_content_type(data: bytes) -> str:
+    """Best-effort content label for payloads whose original name stays unknown.
+
+    This only chooses an honest extension for unnamed files; it never claims a
+    name. Unrecognized content stays "bin".
+    """
+    size = len(data)
+    if size == 0:
+        return "empty"
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "png"
+    if data[:4] == b"DDS ":
+        return "dds"
+    if data[:3] == b"\xff\xd8\xff":
+        return "jpg"
+    if data[:4] == b"RIFF" and size >= 12:
+        if data[8:12] == b"AVI ":
+            return "avi"
+        if data[8:12] == b"WAVE":
+            return "wav"
+        return "riff"
+    if data.startswith(b"OggS"):
+        return "ogg"
+    if data.startswith(b"Granny"):
+        return "gr2"
+    if data[:4] in (b"\x00\x01\x00\x00", b"OTTO", b"true", b"ttcf"):
+        return "ttf"
+    if data[:2] == b"BM":
+        return "bmp"
+    if data.endswith(b"TRUEVISION-XFILE.\x00"):
+        return "tga"
+    if size >= 18:
+        colormap_type, image_type = data[1], data[2]
+        width = data[12] | (data[13] << 8)
+        height = data[14] | (data[15] << 8)
+        bits_per_pixel = data[16]
+        if (colormap_type in (0, 1) and image_type in (0, 1, 2, 3, 9, 10, 11)
+                and 1 <= width <= 16384 and 1 <= height <= 16384
+                and bits_per_pixel in (8, 15, 16, 24, 32) and data[0] in (0, 1, 2, 3, 10, 11)):
+            return "tga"
+    head = data[:4096]
+    control = sum(1 for c in head if c < 0x20 and c not in (9, 10, 13, 12, 27))
+    if 0 not in head and control <= 8:
+        low = head.lower()
+        if low.startswith(b"<?xml") or b"<xml" in low:
+            return "xml"
+        if b"racedatascript" in low:
+            if b"motionfilename" in low or b"submotion" in low or b"nodeevent" in low:
+                return "msa"
+            return "msm"
+        strong = sum(1 for marker in (b"import ", b"from ", b"def ", b"class ", b"self.") if marker in low)
+        weak = sum(1 for marker in (b"__init__", b"elif ", b"except", b"lambda") if marker in low)
+        if strong or strong + weak >= 2:
+            return "py"
+        for line in head.splitlines()[:40]:
+            stripped = line.strip()
+            if not stripped or stripped.startswith(b"#"):
+                continue
+            if b"=" in stripped:
+                left = stripped.split(b"=", 1)[0].strip()
+                if left.isupper() and b" " not in left:
+                    return "py"
+        return "txt"
+    return "bin"
+
 
 def static_string_hints(data: bytes):
     """Recognize only literal/name concatenations, never eval/exec/import code."""
@@ -267,9 +360,19 @@ def static_string_hints(data: bytes):
 
 
 class NameResolver:
+    # Deterministic caps; both implementations (Python and C++) must stay equal.
+    DIRECTORY_LIMIT = 2048
+    BARE_FRAGMENT_LIMIT = 16384
+    TOKEN_LIMIT = 262144
+    STEM_DIRECTORY_LIMIT = 600
+    DIRECTORY_COMBINATION_LIMIT = 4_000_000
+
     def __init__(self, hashes):
         self.hashes = set(hashes)
         self.matches: dict[int, set[str]] = {}
+        self.directories: set[str] = set()
+        self.bare_fragments: set[str] = set()
+        self.tokens: set[str] = set()
 
     def add(self, name: str):
         name = normalize_name(name.strip())
@@ -282,8 +385,14 @@ class NameResolver:
             return
         self.matches.setdefault(hashed, set()).add(name)
 
+    def _remember_fragment(self, candidate: str):
+        if "/" not in candidate and "\\" not in candidate and \
+                len(self.bare_fragments) < self.BARE_FRAGMENT_LIMIT:
+            self.bare_fragments.add(candidate)
+
     def scan(self, data: bytes):
-        fragments = set()
+        # Fragments become cross-file combination inputs in generate(); the
+        # per-call sets of the original design could only pair within one file.
         for match in PATH_PATTERN.finditer(data):
             text = match.group().decode("ascii").strip()
             # Whitespace may be part of a virtual path ("ymir work") or the
@@ -292,16 +401,14 @@ class NameResolver:
             for start in starts:
                 candidate = text[start:]
                 self.add(candidate)
-                if len(fragments) < 2048:
-                    fragments.add(candidate)
+                self._remember_fragment(candidate)
         for match in IMPORT_PATTERN.finditer(data):
             for part in match.group(1).decode("ascii").split(","):
                 module = part.strip().replace(".", "/")
-                self.add(module + ".py")
-                self.add(module + ".pyc")
-                self.add(module + "/__init__.py")
+                for derived in (module + ".py", module + ".pyc", module + "/__init__.py"):
+                    self.add(derived)
+                    self._remember_fragment(derived)
         # Static hints for PATH + "image.png". This never evaluates Python.
-        # Bound both sets to prevent combinatorial work on arbitrary input.
         directories = set()
         for value in static_string_hints(data):
             self.add(value)
@@ -312,8 +419,47 @@ class NameResolver:
                 break
             directories.add(match.group(1).decode("ascii"))
         for directory in sorted(directories):
-            for fragment in sorted(fragments):
+            if len(self.directories) < self.DIRECTORY_LIMIT:
+                self.directories.add(directory)
+        for match in TOKEN_PATTERN.finditer(data):
+            if len(self.tokens) >= self.TOKEN_LIMIT:
+                break
+            self.tokens.add(match.group().decode("ascii").lower())
+
+    def generate(self):
+        """Deterministic last-resort candidates, still CRC32-checked by add().
+
+        The client stores only CRC32(name), so unreferenced names can only be
+        found by combining observed directories, bare basenames, identifier
+        tokens, and exhaustive very short stems. Caps keep the search bounded;
+        a candidate is accepted only when its CRC32 matches an entry.
+        """
+        directories = sorted(self.directories)[: self.DIRECTORY_LIMIT]
+        fragments = sorted(self.bare_fragments)[: self.BARE_FRAGMENT_LIMIT]
+        combinations = 0
+        stop = False
+        for directory in directories:
+            if stop:
+                break
+            for fragment in fragments:
+                if combinations >= self.DIRECTORY_COMBINATION_LIMIT:
+                    stop = True
+                    break
+                combinations += 1
                 self.add(directory + fragment)
+        stems = ["".join(chars) for length in (1, 2)
+                 for chars in itertools.product(STEM_CHARACTERS, repeat=length)]
+        for stem in stems:
+            for extension in ALL_EXTENSIONS:
+                self.add(stem + extension)
+            for directory in directories[: self.STEM_DIRECTORY_LIMIT]:
+                for extension in STEM_EXTENSIONS:
+                    self.add(directory + stem + extension)
+        for token in sorted(self.tokens)[: self.TOKEN_LIMIT]:
+            for extension in TOKEN_EXTENSIONS:
+                self.add(token + extension)
+            self.add("ui" + token + ".py")
+            self.add("ui" + token + ".pyc")
 
     def load(self, path: Path):
         for line in path.read_text(encoding="utf-8-sig").splitlines():
@@ -361,23 +507,36 @@ def process_archive(archive: Path, entries: list[Entry], key_info: dict,
                 (spool / str(entry.index)).write_bytes(data)
                 resolver.scan(data)
                 progress(entry.index + 1, len(entries))
+        # All payload references are in; try bounded combinations and generation
+        # before deciding which entries stay unnamed.
+        resolver.generate()
         records = []
         known = 0
+        unknown_types: dict[str, int] = {}
         # Namespaces keep unknown files and metadata separate from game paths.
         for entry, digest in zip(entries, digests):
             name = resolver.resolved(entry.name_hash)
-            relative = (Path("files") / safe_relative_name(name) if name else
-                        Path("unknown") / f"{entry.index:04d}_{entry.name_hash:08x}.bin")
+            if name:
+                relative = Path("files") / safe_relative_name(name)
+            else:
+                detected = detect_content_type((spool / str(entry.index)).read_bytes())
+                unknown_types[detected] = unknown_types.get(detected, 0) + 1
+                extension = TYPE_EXTENSIONS.get(detected, "bin")
+                relative = Path("unknown") / f"{entry.index:04d}_{entry.name_hash:08x}.{extension}"
             target = result / relative
             target.parent.mkdir(parents=True, exist_ok=True)
             if target.exists():
                 raise UnpackError(f"Duplicate output path: {relative}")
             (spool / str(entry.index)).rename(target)
             known += name is not None
-            records.append({**asdict(entry), "name_hash_hex": f"{entry.name_hash:08x}",
-                            "name": name, "candidates": sorted(resolver.matches.get(entry.name_hash, [])),
-                            "output": relative.as_posix(), "sha256": digest})
-        summary.update(verified=len(entries), named=known, unknown=len(entries) - known)
+            record = {**asdict(entry), "name_hash_hex": f"{entry.name_hash:08x}",
+                      "name": name, "candidates": sorted(resolver.matches.get(entry.name_hash, [])),
+                      "output": relative.as_posix(), "sha256": digest}
+            if not name:
+                record["detected_type"] = detected
+            records.append(record)
+        summary.update(verified=len(entries), named=known, unknown=len(entries) - known,
+                       unknown_types=dict(sorted(unknown_types.items())))
         manifest = {**summary, "format": "ALT2/XTEA-4/LZ4/XXH32", "entries": records}
         (result / "manifest.json").write_text(json.dumps(manifest, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
         if output.exists() or output.is_symlink():
@@ -420,6 +579,7 @@ def main(argv=None) -> int:
         for path in args.names:
             resolver.load(path)
         if args.command == "list":
+            resolver.generate()
             print("INDEX\tNAME_HASH\tORIGINAL\tCOMPRESSED\tSTORED\tNAME (unverified payload)")
             for entry in entries:
                 print(f"{entry.index}\t{entry.name_hash:08x}\t{entry.original_size}\t"

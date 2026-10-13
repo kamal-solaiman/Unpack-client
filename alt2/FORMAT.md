@@ -100,13 +100,13 @@ name_hash:      0x6E2DEEFD
 
 Its first encrypted block is `17 8b 82 d7 29 96 02 59`. Decryption gives `b7 53 63 72 69 70 74 54`, the start of an LZ4 token followed by `ScriptT`. LZ4 decoding produces a `RaceDataScript` file, whose XXH32 matches the header.
 
-Names are inferred, not decrypted. CRC32 cannot reconstruct an arbitrary original filename and is not collision-resistant. Matching candidates from references or a user-supplied list can recover useful names, but not original capitalization. Ambiguous candidates remain unnamed. The manifest preserves every index, original hash, size, output path, candidate set, and the SHA-256 of the decoded content.
+Names are inferred, not decrypted. CRC32 cannot reconstruct an arbitrary original filename and is not collision-resistant. Matching candidates come from three bounded sources: references in the client and decoded payloads (paths, Python imports, static string concatenations, directory + basename pairs), a deterministic generation phase that combines observed directories with bare basenames, enumerates one- and two-character stems against common extensions, and pairs identifier tokens with extensions, and user-supplied `--names` lists. A candidate is accepted only when its CRC32 matches an entry hash; collisions remain possible in principle. Ambiguous candidates remain unnamed. Unnamed payloads are labelled with a best-effort content type (magic bytes for PNG/JPG/DDS/TGA/RIFF/Ogg/Granny/TTF/BMP, text heuristics for Python/XML/MSM/MSA/TXT) that picks their `unknown/` extension, and the manifest records that type. The manifest preserves every index, original hash, size, output path, candidate set, content type where applicable, and the SHA-256 of the decoded content.
 
 ## Verified result
 
 - 894 / 894 entry sizes and XXH32 checks matched.
 - 52,614,417 bytes decoded from 36,796,636 archive bytes.
-- 308 names inferred automatically; 586 payloads retained under indexed hash names.
+- 337 names inferred automatically (308 from references, 29 from the generation phase); 557 payloads retained under indexed, content-typed names (216 txt, 201 png, 108 tga, 8 py, 5 xml, 5 dds, 4 avi, 10 bin).
 - Original archive and executable remained unchanged.
 
 The default extraction directory is ignored by Git to avoid checking in regenerated assets. Reproduce with the commands in [README.md](README.md).

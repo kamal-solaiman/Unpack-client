@@ -55,6 +55,26 @@ constexpr std::uint64_t kDefaultMaxTotalSize = 1024ull * 1024ull * 1024ull;
 constexpr std::size_t kHeaderSize = 24;
 constexpr std::size_t kMaxEntries = 1'000'000;
 
+// Deterministic name-generation caps; the Python reference implementation
+// (alt2/unpack.py, NameResolver) must keep exactly the same values and order.
+constexpr std::size_t kDirectoryLimit = 2048;
+constexpr std::size_t kBareFragmentLimit = 16384;
+constexpr std::size_t kTokenLimit = 262144;
+constexpr std::size_t kStemDirectoryLimit = 600;
+constexpr std::uint64_t kDirectoryCombinationLimit = 4'000'000ull;
+
+constexpr std::array<std::string_view, 34> kAllExtensions{{
+    ".pyc", ".pyo", ".py", ".msm", ".msa", ".mse", ".msf", ".txt", ".xml", ".json",
+    ".cfg", ".ini", ".sub", ".dds", ".tga", ".png", ".jpg", ".jpeg", ".bmp", ".psd",
+    ".gr2", ".wav", ".mp3", ".ogg", ".avi", ".ttf", ".otf", ".def", ".bin", ".dat",
+    ".sct", ".atr", ".raw", ".wtr"}};
+constexpr std::array<std::string_view, 15> kTokenExtensions{{
+    ".pyc", ".py", ".msm", ".msa", ".txt", ".xml", ".dds", ".tga", ".png", ".jpg",
+    ".bmp", ".gr2", ".wav", ".ogg", ".avi"}};
+constexpr std::array<std::string_view, 8> kStemExtensions{{
+    ".png", ".tga", ".dds", ".jpg", ".py", ".wav", ".ogg", ".txt"}};
+constexpr std::string_view kStemCharacters = "abcdefghijklmnopqrstuvwxyz0123456789_";
+
 class UnpackError : public std::runtime_error {
 public:
     explicit UnpackError(const std::string& message) : std::runtime_error(message) {}
@@ -928,11 +948,157 @@ bool has_suffix_ci(std::string_view text, std::size_t end, std::string_view suff
     return true;
 }
 
+bool contains_ci(std::string_view haystack, std::string_view needle) {
+    if (needle.empty()) return true;
+    if (haystack.size() < needle.size()) return false;
+    const auto equal_ci = [](char a, char b) {
+        unsigned char x = static_cast<unsigned char>(a);
+        unsigned char y = static_cast<unsigned char>(b);
+        if (x >= 'A' && x <= 'Z') x = static_cast<unsigned char>(x - 'A' + 'a');
+        if (y >= 'A' && y <= 'Z') y = static_cast<unsigned char>(y - 'A' + 'a');
+        return x == y;
+    };
+    for (std::size_t i = 0; i + needle.size() <= haystack.size(); ++i) {
+        if (std::equal(needle.begin(), needle.end(), haystack.begin() + static_cast<std::ptrdiff_t>(i), equal_ci)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Best-effort content label for payloads whose original name stays unknown.
+// This only chooses an honest extension for unnamed files; it never claims a
+// name. Unrecognized content stays "bin".
+std::string detect_content_type(const Bytes& data) {
+    const std::size_t size = data.size();
+    if (size == 0) return "empty";
+    if (size >= 8 && std::memcmp(data.data(), "\x89PNG\r\n\x1a\n", 8) == 0) return "png";
+    if (size >= 4 && std::memcmp(data.data(), "DDS ", 4) == 0) return "dds";
+    if (size >= 3 && data[0] == 0xFF && data[1] == 0xD8 && data[2] == 0xFF) return "jpg";
+    if (size >= 12 && std::memcmp(data.data(), "RIFF", 4) == 0) {
+        if (std::memcmp(data.data() + 8, "AVI ", 4) == 0) return "avi";
+        if (std::memcmp(data.data() + 8, "WAVE", 4) == 0) return "wav";
+        return "riff";
+    }
+    if (size >= 4 && std::memcmp(data.data(), "OggS", 4) == 0) return "ogg";
+    if (size >= 6 && std::memcmp(data.data(), "Granny", 6) == 0) return "gr2";
+    if (size >= 4 && (std::memcmp(data.data(), "\x00\x01\x00\x00", 4) == 0 ||
+                      std::memcmp(data.data(), "OTTO", 4) == 0 ||
+                      std::memcmp(data.data(), "true", 4) == 0 ||
+                      std::memcmp(data.data(), "ttcf", 4) == 0)) {
+        return "ttf";
+    }
+    if (size >= 2 && data[0] == 'B' && data[1] == 'M') return "bmp";
+    if (size >= 18 && std::memcmp(data.data() + size - 18, "TRUEVISION-XFILE.\x00", 18) == 0) {
+        return "tga";
+    }
+    if (size >= 18) {
+        const unsigned colormap_type = data[1];
+        const unsigned image_type = data[2];
+        const unsigned width = static_cast<unsigned>(data[12]) | (static_cast<unsigned>(data[13]) << 8);
+        const unsigned height = static_cast<unsigned>(data[14]) | (static_cast<unsigned>(data[15]) << 8);
+        const unsigned bits_per_pixel = data[16];
+        const bool header_ok =
+            (colormap_type == 0 || colormap_type == 1) &&
+            (image_type == 0 || image_type == 1 || image_type == 2 || image_type == 3 ||
+             image_type == 9 || image_type == 10 || image_type == 11) &&
+            width >= 1 && width <= 16384 && height >= 1 && height <= 16384 &&
+            (bits_per_pixel == 8 || bits_per_pixel == 15 || bits_per_pixel == 16 ||
+             bits_per_pixel == 24 || bits_per_pixel == 32) &&
+            (data[0] == 0 || data[0] == 1 || data[0] == 2 || data[0] == 3 ||
+             data[0] == 10 || data[0] == 11);
+        if (header_ok) return "tga";
+    }
+    const std::size_t head_size = std::min<std::size_t>(size, 4096);
+    const std::string_view head(reinterpret_cast<const char*>(data.data()), head_size);
+    std::size_t control = 0;
+    bool has_nul = false;
+    for (unsigned char c : head) {
+        if (c == 0) { has_nul = true; break; }
+        if (c < 0x20 && c != 9 && c != 10 && c != 13 && c != 12 && c != 27) ++control;
+    }
+    if (!has_nul && control <= 8) {
+        if (head_size >= 5 && head.substr(0, 5) == "<?xml") return "xml";
+        if (contains_ci(head, "<xml")) return "xml";
+        if (contains_ci(head, "racedatascript")) {
+            if (contains_ci(head, "motionfilename") || contains_ci(head, "submotion") ||
+                contains_ci(head, "nodeevent")) {
+                return "msa";
+            }
+            return "msm";
+        }
+        static constexpr std::array<std::string_view, 5> strong_markers{{
+            "import ", "from ", "def ", "class ", "self."}};
+        static constexpr std::array<std::string_view, 4> weak_markers{{
+            "__init__", "elif ", "except", "lambda"}};
+        std::size_t strong = 0;
+        std::size_t weak = 0;
+        for (const auto marker : strong_markers) {
+            if (contains_ci(head, marker)) ++strong;
+        }
+        for (const auto marker : weak_markers) {
+            if (contains_ci(head, marker)) ++weak;
+        }
+        if (strong != 0 || strong + weak >= 2) return "py";
+        std::size_t line_begin = 0;
+        for (unsigned line_index = 0; line_index < 40 && line_begin <= head.size(); ++line_index) {
+            const std::size_t line_end = head.find('\n', line_begin);
+            const std::size_t stop = line_end == std::string_view::npos ? head.size() : line_end;
+            std::string_view line = head.substr(line_begin, stop - line_begin);
+            while (!line.empty() && (line.front() == ' ' || line.front() == '\t' ||
+                                     line.front() == '\r')) line.remove_prefix(1);
+            while (!line.empty() && (line.back() == ' ' || line.back() == '\t' ||
+                                     line.back() == '\r')) line.remove_suffix(1);
+            const std::size_t equals = line.find('=');
+            if (!line.empty() && equals != std::string_view::npos && line.front() != '#') {
+                std::string_view left = line.substr(0, equals);
+                while (!left.empty() && (left.back() == ' ' || left.back() == '\t')) left.remove_suffix(1);
+                // Match Python's str.isupper(): at least one cased character,
+                // all cased characters uppercase; spaces disqualify.
+                bool has_upper = false;
+                bool is_upper = !left.empty();
+                for (unsigned char c : left) {
+                    if (c == ' ' || (c >= 'a' && c <= 'z')) { is_upper = false; break; }
+                    if (c >= 'A' && c <= 'Z') has_upper = true;
+                }
+                if (is_upper && has_upper) return "py";
+            }
+            if (line_end == std::string_view::npos) break;
+            line_begin = line_end + 1;
+        }
+        return "txt";
+    }
+    return "bin";
+}
+
+std::string type_extension(const std::string& detected) {
+    if (detected == "png") return "png";
+    if (detected == "jpg") return "jpg";
+    if (detected == "dds") return "dds";
+    if (detected == "avi") return "avi";
+    if (detected == "wav") return "wav";
+    if (detected == "ogg") return "ogg";
+    if (detected == "gr2") return "gr2";
+    if (detected == "ttf") return "ttf";
+    if (detected == "bmp") return "bmp";
+    if (detected == "tga") return "tga";
+    if (detected == "xml") return "xml";
+    if (detected == "msm") return "msm";
+    if (detected == "msa") return "msa";
+    if (detected == "py") return "py";
+    if (detected == "txt") return "txt";
+    return "bin";
+}
+
 class NameResolver {
 public:
     explicit NameResolver(const std::vector<Entry>& entries) {
         for (const auto& entry : entries) hashes_.insert(entry.name_hash);
     }
+
+    explicit NameResolver(const std::set<std::uint32_t>& hashes) : hashes_(hashes) {}
+
+    void add_hash_for_test(std::uint32_t hash) { hashes_.insert(hash); }
 
     void add(std::string name) {
         name = normalize_name(std::move(name));
@@ -975,18 +1141,75 @@ public:
     void scan(const Bytes& data) {
         if (data.empty()) return;
         const std::string_view text(reinterpret_cast<const char*>(data.data()), data.size());
-        std::set<std::string> fragments;
+        // Fragments become cross-file combination inputs in generate(); the
+        // per-call sets of the original design could only pair within one file.
         std::set<std::string> directories;
-        scan_path_references(text, fragments);
+        scan_path_references(text);
         scan_imports(text);
         scan_static_assignments(text, directories);
         scan_quoted_directories(text, directories);
-        std::size_t combinations = 0;
         for (const auto& directory : directories) {
+            if (directories_.size() >= kDirectoryLimit) break;
+            directories_.insert(directory);
+        }
+        scan_tokens(text);
+    }
+
+    // Deterministic last-resort candidates, still CRC32-checked by add().
+    // The client stores only CRC32(name), so unreferenced names can only be
+    // found by combining observed directories, bare basenames, identifier
+    // tokens, and exhaustive very short stems. Caps keep the search bounded.
+    void generate() {
+        std::vector<std::string> directories(directories_.begin(), directories_.end());
+        if (directories.size() > kDirectoryLimit) directories.resize(kDirectoryLimit);
+        std::vector<std::string> fragments(bare_fragments_.begin(), bare_fragments_.end());
+        if (fragments.size() > kBareFragmentLimit) fragments.resize(kBareFragmentLimit);
+        std::uint64_t combinations = 0;
+        bool stop = false;
+        for (const auto& directory : directories) {
+            if (stop) break;
             for (const auto& fragment : fragments) {
-                if (++combinations > 262144) return;
+                if (combinations >= kDirectoryCombinationLimit) {
+                    stop = true;
+                    break;
+                }
+                ++combinations;
                 add(directory + fragment);
             }
+        }
+        std::vector<std::string> stems;
+        const std::size_t base = kStemCharacters.size();
+        for (unsigned length = 1; length <= 2; ++length) {
+            const std::size_t total = length == 1 ? base : base * base;
+            for (std::size_t value = 0; value < total; ++value) {
+                std::string stem(length, ' ');
+                std::size_t rest = value;
+                for (unsigned k = length; k-- > 0;) {
+                    stem[k] = kStemCharacters[rest % base];
+                    rest /= base;
+                }
+                stems.push_back(std::move(stem));
+            }
+        }
+        for (const auto& stem : stems) {
+            for (const auto extension : kAllExtensions) {
+                add(stem + std::string(extension));
+            }
+            const std::size_t directory_limit = std::min(directories.size(), kStemDirectoryLimit);
+            for (std::size_t d = 0; d < directory_limit; ++d) {
+                for (const auto extension : kStemExtensions) {
+                    add(directories[d] + stem + std::string(extension));
+                }
+            }
+        }
+        std::vector<std::string> tokens(tokens_.begin(), tokens_.end());
+        if (tokens.size() > kTokenLimit) tokens.resize(kTokenLimit);
+        for (const auto& token : tokens) {
+            for (const auto extension : kTokenExtensions) {
+                add(token + std::string(extension));
+            }
+            add("ui" + token + ".py");
+            add("ui" + token + ".pyc");
         }
     }
 
@@ -1024,7 +1247,7 @@ private:
         return true;
     }
 
-    void scan_path_references(std::string_view text, std::set<std::string>& fragments) {
+    void scan_path_references(std::string_view text) {
         static const std::array<std::string_view, 34> extensions{
             ".pyc", ".pyo", ".py", ".msm", ".msa", ".mse", ".msf", ".txt", ".xml", ".json",
             ".cfg", ".ini", ".sub", ".dds", ".tga", ".png", ".jpg", ".jpeg", ".bmp", ".psd",
@@ -1053,10 +1276,43 @@ private:
                         if (++work > 300000) break;
                         std::string candidate(text.substr(start, end - start));
                         add(candidate);
-                        if (fragments.size() < 2048) fragments.insert(std::move(candidate));
+                        remember_bare(candidate);
                     }
                 }
             }
+        }
+    }
+
+    void remember_bare(const std::string& candidate) {
+        if (candidate.find('/') == std::string::npos &&
+            candidate.find('\\') == std::string::npos &&
+            bare_fragments_.size() < kBareFragmentLimit) {
+            bare_fragments_.insert(candidate);
+        }
+    }
+
+    void scan_tokens(std::string_view text) {
+        std::size_t i = 0;
+        while (i < text.size() && tokens_.size() < kTokenLimit) {
+            const unsigned char c = static_cast<unsigned char>(text[i]);
+            if (!(ascii_alpha(c) || c == '_')) {
+                ++i;
+                continue;
+            }
+            std::size_t j = i + 1;
+            while (j < text.size() && j - i <= 40) {
+                const unsigned char w = static_cast<unsigned char>(text[j]);
+                if (!(ascii_alpha(w) || ascii_digit(w) || w == '_')) break;
+                ++j;
+            }
+            if (j - i >= 2 && tokens_.size() < kTokenLimit) {
+                std::string token(text.substr(i, j - i));
+                for (char& ch : token) {
+                    if (ch >= 'A' && ch <= 'Z') ch = static_cast<char>(ch - 'A' + 'a');
+                }
+                tokens_.insert(std::move(token));
+            }
+            i = j;
         }
     }
 
@@ -1121,9 +1377,15 @@ private:
         }
         if (expect_identifier_start) return;
         std::replace(module.begin(), module.end(), '.', '/');
-        add(module + ".py");
-        add(module + ".pyc");
-        add(module + "/__init__.py");
+        std::string derived = module + ".py";
+        add(derived);
+        remember_bare(derived);
+        derived = module + ".pyc";
+        add(derived);
+        remember_bare(derived);
+        derived = module + "/__init__.py";
+        add(derived);
+        remember_bare(derived);
     }
 
     static bool parse_string_expression(std::string_view expression,
@@ -1244,10 +1506,14 @@ private:
 
     std::set<std::uint32_t> hashes_;
     std::map<std::uint32_t, std::set<std::string>> matches_;
+    std::set<std::string> directories_;
+    std::set<std::string> bare_fragments_;
+    std::set<std::string> tokens_;
 };
 
 struct DecodedRecord {
     std::string sha256;
+    std::string detected_type;
 };
 
 std::string progress_path(const fs::path& path) {
@@ -1261,7 +1527,8 @@ void show_progress(std::size_t done, std::size_t total) {
 }
 
 std::string entry_json(const Entry& entry, const NameResolver& names,
-                       const std::string& output, const std::string& digest) {
+                       const std::string& output, const std::string& digest,
+                       const std::string& detected_type) {
     const std::string name = names.resolved(entry.name_hash);
     const auto candidates = names.candidates(entry.name_hash);
     std::ostringstream json;
@@ -1285,8 +1552,25 @@ std::string entry_json(const Entry& entry, const NameResolver& names,
     }
     json << "],\n"
          << "      \"output\": \"" << json_escape(output) << "\",\n"
-         << "      \"sha256\": \"" << digest << "\"\n"
-         << "    }";
+         << "      \"sha256\": \"" << digest << "\"";
+    if (name.empty()) {
+        json << ",\n      \"detected_type\": \"" << json_escape(detected_type) << "\"";
+    }
+    json << "\n    }";
+    return json.str();
+}
+
+std::string unknown_types_json(const std::map<std::string, std::size_t>& unknown_types) {
+    std::ostringstream json;
+    json << "{";
+    bool first = true;
+    for (const auto& [type, count] : unknown_types) {
+        if (!first) json << ",";
+        first = false;
+        json << "\n    \"" << json_escape(type) << "\": " << count;
+    }
+    if (!unknown_types.empty()) json << "\n  ";
+    json << "}";
     return json.str();
 }
 
@@ -1383,10 +1667,11 @@ private:
     fs::path path_;
 };
 
-std::string unknown_filename(const Entry& entry) {
+std::string unknown_filename(const Entry& entry, const std::string& extension) {
     std::ostringstream name;
     name << std::setw(4) << std::setfill('0') << entry.index << "_"
-         << std::hex << std::nouppercase << std::setw(8) << std::setfill('0') << entry.name_hash << ".bin";
+         << std::hex << std::nouppercase << std::setw(8) << std::setfill('0') << entry.name_hash
+         << "." << extension;
     return name.str();
 }
 
@@ -1425,15 +1710,19 @@ std::string process_archive(const fs::path& archive, const std::vector<Entry>& e
     records.reserve(entries.size());
     for (const auto& entry : entries) {
         const Bytes payload = decode_entry(stream, entry, key_info.key);
-        records.push_back({sha256_hex(payload)});
+        records.push_back({sha256_hex(payload), detect_content_type(payload)});
         write_file(spool / std::to_string(entry.index), payload);
         names.scan(payload);
         show_progress(entry.index + 1, entries.size());
     }
+    // All payload references are in; try bounded combinations and generation
+    // before deciding which entries stay unnamed.
+    names.generate();
 
     std::set<std::string> outputs;
     std::vector<std::string> output_paths;
     output_paths.reserve(entries.size());
+    std::map<std::string, std::size_t> unknown_types;
     std::size_t named_count = 0;
     for (const auto& entry : entries) {
         const std::string recovered_name = names.resolved(entry.name_hash);
@@ -1444,7 +1733,9 @@ std::string process_archive(const fs::path& archive, const std::vector<Entry>& e
             relative_path = path_from_utf8(relative);
             ++named_count;
         } else {
-            relative = std::string("unknown/") + unknown_filename(entry);
+            const std::string detected = records[entry.index].detected_type;
+            ++unknown_types[detected];
+            relative = std::string("unknown/") + unknown_filename(entry, type_extension(detected));
             relative_path = path_from_utf8(relative);
         }
         if (!outputs.insert(relative).second) {
@@ -1469,11 +1760,13 @@ std::string process_archive(const fs::path& archive, const std::vector<Entry>& e
              << "  \"verified\": " << entries.size() << ",\n"
              << "  \"named\": " << named_count << ",\n"
              << "  \"unknown\": " << unknown_count << ",\n"
+             << "  \"unknown_types\": " << unknown_types_json(unknown_types) << ",\n"
              << "  \"output\": \"" << json_escape(path_utf8(final_output)) << "\",\n"
              << "  \"format\": \"ALT2/XTEA-4/LZ4/XXH32\",\n"
              << "  \"entries\": [\n";
     for (std::size_t i = 0; i < entries.size(); ++i) {
-        manifest << entry_json(entries[i], names, output_paths[i], records[i].sha256);
+        manifest << entry_json(entries[i], names, output_paths[i], records[i].sha256,
+                               records[i].detected_type);
         if (i + 1 != entries.size()) manifest << ',';
         manifest << '\n';
     }
@@ -1500,6 +1793,7 @@ std::string process_archive(const fs::path& archive, const std::vector<Entry>& e
             << "  \"verified\": " << entries.size() << ",\n"
             << "  \"named\": " << named_count << ",\n"
             << "  \"unknown\": " << unknown_count << ",\n"
+            << "  \"unknown_types\": " << unknown_types_json(unknown_types) << ",\n"
             << "  \"output\": \"" << json_escape(path_utf8(final_output)) << "\"\n"
             << "}";
     return summary.str();
@@ -1827,6 +2121,9 @@ void list_archive(const std::vector<Entry>& entries, const NameResolver& names) 
     }
 }
 
+void run_content_type_tests();
+void run_name_generation_tests();
+
 void run_self_tests() {
     const std::array<std::uint8_t, 16> key{
         0x54, 0xd8, 0x20, 0x39, 0xaa, 0x8d, 0x27, 0x22,
@@ -1857,7 +2154,87 @@ void run_self_tests() {
     if (xxh32(hello.data(), hello.size(), kMagic) != 0x3BF12B23u) {
         throw UnpackError("Self-test failed: seeded XXH32 reference vector");
     }
+    run_content_type_tests();
+    run_name_generation_tests();
     std::cout << "Self-test passed.\n";
+}
+
+void expect_content_type(const Bytes& data, const std::string& expected) {
+    const std::string detected = detect_content_type(data);
+    if (detected != expected) {
+        throw UnpackError("Self-test failed: content type " + detected +
+                          " instead of " + expected);
+    }
+}
+
+void run_content_type_tests() {
+    Bytes png;
+    for (const std::uint8_t byte : {0x89u, 0x50u, 0x4Eu, 0x47u, 0x0Du, 0x0Au, 0x1Au, 0x0Au}) {
+        png.push_back(byte);
+    }
+    png.resize(24, 0);
+    expect_content_type(png, "png");
+    Bytes jpeg{0xFF, 0xD8, 0xFF, 0xE0};
+    jpeg.resize(24, 0);
+    expect_content_type(jpeg, "jpg");
+    expect_content_type(Bytes{}, "empty");
+    expect_content_type(Bytes(24, 0x41), "txt");
+    expect_content_type(Bytes{'i', 'm', 'p', 'o', 'r', 't', ' ', 'a', 'p', 'p', '\r', '\n',
+                              'i', 'm', 'p', 'o', 'r', 't', ' ', 'u', 'i', '\r', '\n'}, "py");
+    const std::string script = "ScriptType            RaceDataScript\r\nBaseModelFileName   x\r\n";
+    expect_content_type(Bytes(script.begin(), script.end()), "msm");
+    const std::string motion = "ScriptType            RaceDataScript\r\nMotionFileName   y\r\n";
+    expect_content_type(Bytes(motion.begin(), motion.end()), "msa");
+    Bytes tga_footer(32, 0);
+    const std::string footer("TRUEVISION-XFILE.\x00", 18);
+    tga_footer.insert(tga_footer.end(), footer.begin(), footer.end());
+    expect_content_type(tga_footer, "tga");
+    Bytes binary{0x00, 0x01, 0x02, 0x03, 0x7F, 0x80, 0xFF};
+    binary.resize(24, 0x00);
+    expect_content_type(binary, "bin");
+}
+
+void run_name_generation_tests() {
+    // Cross-file combination: directory from one scan, bare name from another.
+    const std::uint32_t board_hash = name_hash("skill_tree/board/top.tga");
+    NameResolver board_entries((std::set<std::uint32_t>{board_hash}));
+    board_entries.scan(Bytes{'p', 'a', 't', 'h', ' ', '=', ' ', '"', 's', 'k', 'i', 'l', 'l', '_',
+                             't', 'r', 'e', 'e', '/', 'b', 'o', 'a', 'r', 'd', '/', '"', '\n'});
+    if (!board_entries.resolved(board_hash).empty()) {
+        throw UnpackError("Self-test failed: combination ran before generate()");
+    }
+    board_entries.scan(Bytes{'l', 'i', 'n', 'k', ' ', 'h', 'r', 'e', 'f', '=', '"', 't', 'o', 'p',
+                             '.', 't', 'g', 'a', '"', '\n'});
+    board_entries.generate();
+    if (board_entries.resolved(board_hash) != "skill_tree/board/top.tga") {
+        throw UnpackError("Self-test failed: cross-file directory + fragment generation");
+    }
+    // Exhaustive short stems with an observed directory.
+    const std::uint32_t direction_hash = name_hash("skill_tree/direction/7.tga");
+    NameResolver stem_entries((std::set<std::uint32_t>{direction_hash}));
+    const std::string stem_data = "dir = \"skill_tree/direction/\"\n";
+    stem_entries.scan(Bytes(stem_data.begin(), stem_data.end()));
+    stem_entries.generate();
+    if (stem_entries.resolved(direction_hash) != "skill_tree/direction/7.tga") {
+        throw UnpackError("Self-test failed: short-stem generation");
+    }
+    // Identifier token + extension and the ui prefix.
+    const std::uint32_t token_hash = name_hash("uiskyboxchanger.py");
+    NameResolver token_entries((std::set<std::uint32_t>{token_hash}));
+    const std::string token_data = "self.handler = SkyBoxChanger()\n";
+    token_entries.scan(Bytes(token_data.begin(), token_data.end()));
+    token_entries.generate();
+    if (token_entries.resolved(token_hash) != "uiskyboxchanger.py") {
+        throw UnpackError("Self-test failed: token + extension generation");
+    }
+    // CRC-checked candidates never invent names for unmatched hashes.
+    NameResolver absent_entries((std::set<std::uint32_t>{0x11223344u, 0x55667788u}));
+    const std::string noise = "A = \"ui/\"\nbackground.png\nSkyBoxChanger()\n";
+    absent_entries.scan(Bytes(noise.begin(), noise.end()));
+    absent_entries.generate();
+    if (!absent_entries.candidates(0x11223344u).empty() || !absent_entries.candidates(0x55667788u).empty()) {
+        throw UnpackError("Self-test failed: generation invented a name");
+    }
 }
 
 int run(const std::vector<std::string>& arguments, const std::string& executable) {
@@ -1890,6 +2267,7 @@ int run(const std::vector<std::string>& arguments, const std::string& executable
             NameResolver names(entries);
             names.scan(client);
             for (const auto& names_file : options.names) names.load(names_file);
+            names.generate();
             list_archive(entries, names);
         }
         return 0;
