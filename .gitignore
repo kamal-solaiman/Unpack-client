@@ -4,4 +4,8 @@ __pycache__/
 *.py[cod]
 alt2/unpacked/
 alt2/extracted/
+alt2/bin/
+alt2/cpp/obj/
+alt2/cpp/.vs/
+alt2/cpp/build/
 History/unpacked/
