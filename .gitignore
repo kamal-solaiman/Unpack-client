@@ -9,3 +9,16 @@ alt2/cpp/obj/
 alt2/cpp/.vs/
 alt2/cpp/build/
 History/unpacked/
+output/
+keys.txt
+UnpackTool
+bruteforce
+build/
+x64/
+Debug/
+Release/
+*.tmp
+*.decrypted.tmp
+*.log
+.vs/
+
