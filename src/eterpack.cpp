@@ -452,8 +452,12 @@ bool EterPack::LoadRaw(const std::string& path, const uint32_t key[4]) {
     if (ext != ".bin" && info.filename.find('.') == std::string::npos) {
         info.filename += ext;
     }
-    info.compressedSize = fileSize;
-    info.uncompressedSize = decrypted.size();
+    if (fileSize > UINT32_MAX) {
+        std::cerr << "[ERROR] File too large for raw mode (>4GB): " << path << "\n";
+        return false;
+    }
+    info.compressedSize = static_cast<uint32_t>(fileSize);
+    info.uncompressedSize = static_cast<uint32_t>(decrypted.size());
     info.dataOffset = 0;
     info.type = PackFileType::RAW;
     fileList.push_back(info);
