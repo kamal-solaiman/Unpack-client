@@ -22,3 +22,7 @@ Release/
 *.log
 .vs/
 
+
+# History standalone tool
+History-output/
+History/HistoryUnpacker/History-output/
