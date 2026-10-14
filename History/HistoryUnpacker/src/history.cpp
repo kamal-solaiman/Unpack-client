@@ -1,6 +1,7 @@
 #include "history.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <cwctype>
 #include <fstream>
 #include <iomanip>
 #include <sstream>
@@ -156,6 +157,16 @@ fs::path safeRelative(std::string name) {
     }
     require(!result.empty(),"Empty output path"); return result;
 }
+// Windows file names are case-insensitive, and weakly_canonical() returns the on-disk casing,
+// which may differ from the spelling the user typed. Compare folded spellings there.
+static bool sameSpelling(const fs::path& a, const fs::path& b) {
+#ifdef _WIN32
+    auto fold=[](std::wstring s) { for(auto& c:s) c=static_cast<wchar_t>(std::towlower(c)); return s; };
+    return fold(a.wstring())==fold(b.wstring());
+#else
+    return a==b;
+#endif
+}
 void writeExclusive(const fs::path& root, const fs::path& relative, const Bytes& data) {
     require(!relative.is_absolute(),"Absolute output rejected");
     for(const auto& part:relative) require(part!="..", "Output traversal rejected");
@@ -164,11 +175,15 @@ void writeExclusive(const fs::path& root, const fs::path& relative, const Bytes&
     fs::path current;
     for(const auto& part:target.parent_path()) {
         current/=part;
+        // A bare drive prefix ("C:") or root ("C:\", "/") is not a directory to create or
+        // inspect. Calling weakly_canonical("C:") resolves it against the drive's current
+        // directory on Windows, which made every output on Windows fail this check.
+        if(!current.has_relative_path()) continue;
         auto status=fs::symlink_status(current);
         require(!fs::is_symlink(status),"Symlink output directory rejected");
         if(fs::exists(status)) require(fs::is_directory(status),"Output parent is not a directory");
         else fs::create_directory(current);
-        require(fs::weakly_canonical(current)==current.lexically_normal(),"Redirected output directory rejected");
+        require(sameSpelling(fs::weakly_canonical(current),current.lexically_normal()),"Redirected output directory rejected");
     }
     require(!fs::exists(fs::symlink_status(target)),"Output already exists: "+target.string());
     // C11 'x' performs exclusive creation, preventing accidental replacement.
