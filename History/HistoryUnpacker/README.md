@@ -2,9 +2,13 @@
 
 Standalone C++17 console tool for the **History** D2 archive profile supplied in this repository. All menus, commands, diagnostics and reports are in English. No Alt2 code, client execution, injection, Python runtime, network service or runtime DLL dependency is needed by the tool.
 
+The tool is **not limited to `workplace.d2`**. It processes every History D2 archive you point it at: pass a directory and it discovers all archives inside (recursively, `pack\` first), pass `--archive` several times to pick individual files, or pass nothing and it searches the working directory and its parents. Every command - `info`, `keys`, `list`, `verify`, `extract`, `all`, `manifest` - runs over the whole selection.
+
 ## What was actually verified
 
 The checkout contains `History2.exe` and `pack/workplace.d2`; it does **not** contain a separate `pack/root` file. The supplied archive holds 813 entries. Every entry was decrypted, decompressed and verified successfully. The C++ extractor's complete output was also compared against an independent Python implementation with an aggregate SHA-256 test.
+
+A client `pack` directory normally holds several archives (`workplace.d2`, `locale_*.d2`, `root`, ...). Point the tool at that directory and all of them are found by their `0xF00FED5C` magic - the file extension is never trusted, and files that only look like archives are reported as rejected instead of guessed at.
 
 - AES-256-CFB128, reset to the same archive IV for each entry.
 - Raw LZ4 blocks when stored and original sizes differ; otherwise uncompressed bytes.
@@ -44,18 +48,25 @@ Linux development build: `cmake -S . -B build && cmake --build build && ctest --
 
 The implementation was compiled/tested on Linux in this session; Visual Studio build files are supplied, but an actual Windows/MSVC run was not available.
 
+Discovery limits: a directory argument is searched up to four levels deep, the automatic
+parent search goes up seven levels and stops at the first level that yields archives, and
+`--archive` can be repeated as often as needed to select archives beyond those limits.
+
 ## Menu
 
-1. Inspect archive.
-2. Extract and validate the archive key / IV (displayed, not saved automatically).
-3. Recover and list filenames.
-4. Decrypt one file by original virtual name.
-5. Decrypt all files.
-6. Verify all payloads without writing files.
-7. Export filename/metadata CSV.
-8. Change archive and output paths.
-9. Set History EXE and additional filename dictionary.
-10. Toggle export of unresolved names.
+The menu header lists every archive currently selected (the first eight, plus a count of the rest).
+
+1. Inspect archives.
+2. Extract and validate the archive key / IV of each archive (displayed, not saved automatically).
+3. Scan the selected directories for archives and report which ones are usable.
+4. Recover and list filenames.
+5. Decrypt one file by original virtual name (searched in every selected archive).
+6. Decrypt all files of every selected archive.
+7. Verify all payloads without writing files.
+8. Export filename/metadata CSV.
+9. Change archive (file, directory or `;`-separated list) and output paths.
+10. Set History EXE and additional filename dictionaries (`;`-separated).
+11. Toggle export of unresolved names.
 0. Exit.
 
 Errors return to the menu. Console input and Windows command-line paths use UTF-8/Unicode. The archive profile's filename hash normalization is ASCII; non-ASCII original filename encodings have not been established from this sample.
@@ -67,17 +78,46 @@ From the repository root, replacing `HistoryUnpacker` with the path to your comp
 ```bat
 HistoryUnpacker --archive "History\pack\workplace.d2" info
 HistoryUnpacker --archive "History\pack\workplace.d2" keys
-HistoryUnpacker --archive "History\pack\workplace.d2" verify
-HistoryUnpacker --archive "History\pack\workplace.d2" --exe "History\History2.exe" list
+HistoryUnpacker --archive "C:\Metin2\pack" scan
+HistoryUnpacker --archive "C:\Metin2\pack" verify
+HistoryUnpacker --archive "C:\Metin2\pack" --exe "C:\Metin2\History2.exe" list
+HistoryUnpacker --archive "C:\Metin2\pack" --out "C:\unpacked\resolved" all
+HistoryUnpacker --archive "C:\Metin2\pack" --out "C:\unpacked\complete" --include-unresolved all
+HistoryUnpacker --archive "pack\workplace.d2" --archive "pack\locale_sound.d2" --out "out\two" all
 HistoryUnpacker --out "History\unpacked\single" extract "ui.py"
-HistoryUnpacker --out "History\unpacked\resolved" all
-HistoryUnpacker --out "History\unpacked\complete" --include-unresolved all
 HistoryUnpacker --names "my-names.txt" manifest "names-report.csv"
 ```
 
-To try a separately supplied `pack/root`, use `--archive "path\to\pack\root"`. Extension does not matter; its **format must match**. Other formats are explicitly rejected rather than guessed.
+`--archive` accepts a **file or a directory** and may be repeated. A directory is searched
+recursively (up to four levels, `pack\` first) and every file whose first four bytes are the
+D2 magic is selected; `workplace.d2` is ordered first for familiarity. Extension does not
+matter, so a separately supplied `pack/root` works with `--archive "path\to\pack\root"`.
+Other formats - including Alt2 `root` (`0x000FED0C`) - are explicitly rejected rather than
+guessed, and a directory that contains no D2 archive is an error, not an empty success.
 
-Exit codes: **0** success; **1** failure (possibly partial extraction); **2** extraction completed but unresolved files were skipped. Inspect `history-manifest.csv` for per-entry status.
+### Output layout with several archives
+
+Each archive is extracted into its own subfolder of `--out`, named after the archive file
+(`workplace.d2` -> `out\workplace\`), so identical filenames in different archives never
+collide:
+
+```
+out\
+  history-manifest-all.csv     combined report (archive, output_folder, per-entry status)
+  workplace\
+    history-manifest.csv       per-archive report
+    ui.py, uiscript\..., _unresolved\...
+  locale_sound\
+    history-manifest.csv
+    ...
+```
+
+`extract NAME` still writes directly into `--out` (no subfolder) and searches the archives in
+order, reporting which archive supplied the file. `manifest FILE.csv` writes exactly the one
+requested CSV - with `archive` and `output_folder` columns - and no payload. A single archive
+behaves the same way, it simply produces one subfolder.
+
+Exit codes: **0** success; **1** failure (possibly partial extraction, or at least one archive was rejected/unusable); **2** extraction completed but unresolved files were skipped. Inspect `history-manifest.csv` (per archive) or `history-manifest-all.csv` (whole selection) for per-entry status.
 
 ## Original names and extensions: important limitations
 
@@ -111,13 +151,14 @@ Virtual game paths such as `d:/ymir work/...` become relative `d/ymir work/...` 
 - Do not extract into a directory concurrently modified by an untrusted process; filesystem checks cannot eliminate all directory-race attacks.
 - Archive size is limited to the format's 32-bit offsets (under 4 GiB). Each stored/decoded entry is limited to 256 MiB; at most one million entries are allowed. Payloads are processed one at a time.
 - A changed or corrupt input, unsupported masks/profile, unwritable destination, duplicate hash, malformed offsets, truncated data, invalid LZ4 and checksum mismatch produce explicit errors.
+- In a batch, one rejected or corrupt archive never aborts the others: it is reported with its reason, the remaining archives are processed, and the exit code reflects the failure.
 
 ## Tests and source layout
 
-- `src/history.*`: bounded archive parsing, AES-CFB, LZ4, checksums, candidate recovery and safe output.
-- `src/main.cpp`: menu, CLI, reporting and Unicode Windows entry point.
-- `tests/tests.cpp`: NIST AES-256-CFB128 vectors, partial blocks, CRC32, LZ4 overlap and invalid streams, invalid archives, unsafe paths and overwrite protection.
-- `tests/integration.py`: optional stdlib-only test of all 813 fixture entries, independent aggregate digest, single extraction, unresolved policy, corruption and malformed metadata.
+- `src/history.*`: bounded archive parsing, AES-CFB, LZ4, checksums, candidate recovery, archive discovery and safe output.
+- `src/main.cpp`: menu, CLI, per-archive batch processing, reporting and Unicode Windows entry point.
+- `tests/tests.cpp`: NIST AES-256-CFB128 vectors, partial blocks, CRC32, LZ4 overlap and invalid streams, invalid archives, unsafe paths, overwrite protection and archive discovery (magic sniffing, name filter, directory expansion, parent search).
+- `tests/integration.py`: optional stdlib-only test of all 813 fixture entries, independent aggregate digest, single extraction, unresolved policy, corruption and malformed metadata, plus multi-archive discovery, batch extraction into per-archive folders and the combined manifest.
 - `FORMAT.md`: on-disk layout and client analysis notes.
 - `third_party/SOURCES.txt`: pinned third-party revisions and licenses.
 

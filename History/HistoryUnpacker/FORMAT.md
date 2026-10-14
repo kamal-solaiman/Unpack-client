@@ -12,6 +12,27 @@ All integers are unsigned 32-bit little-endian. This documentation describes the
 
 The client copies both 32-byte fields and can XOR them with optional external 32-byte masks. The supplied `workplace.d2` verifies without any masks. This tool implements that proven, unmasked profile only.
 
+Because the key and IV live in each archive's own header, every archive is self-describing: the
+same code path decrypts `workplace.d2` and any other D2 pack of this profile without per-file
+configuration. A file is treated as a History D2 archive **only** when its first four bytes are
+`5c ed 0f f0`; the file name and extension are never used to decide. The Alt2 profile in this
+repository (`alt2/data/root`, magic `0c ed 0f 00`) is a different format and is rejected.
+
+## Selecting several archives
+
+`--archive` accepts a file or a directory and may be repeated. A directory is searched
+recursively up to four levels, with `<directory>/pack` scanned before the directory itself, and
+`workplace.d2` is sorted first so it keeps its historical position. Candidate names are any
+`*.d2` file plus the extension-less pack names (`root`, `index`, `locale`, `map`, `sound`,
+`effect`, `npc`, `item`, `guild`, `season`, `dungeon`, `pack`); each candidate is then confirmed
+by the magic, so a misnamed or foreign file is skipped instead of guessed at. Without
+`--archive`, the tool searches the working directory and then the executable's directory, up to
+seven parents each, stopping at the first level that yields archives.
+
+Each archive keeps its own key/IV, entry table and output folder; nothing is merged across
+archives, and a duplicate filename hash in two different archives is not an error (only within
+one archive).
+
 ## Entry records
 
 First record begins at offset 68. Each record is 20 bytes, immediately followed by its payload.

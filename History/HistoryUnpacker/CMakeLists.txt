@@ -24,6 +24,10 @@ if(BUILD_TESTING)
   add_test(NAME core COMMAND HistoryTests)
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2")
     add_test(NAME history_sample_verify COMMAND HistoryUnpacker --archive "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2" verify)
+    # The pack directory itself is a valid --archive argument: every D2 archive in it
+    # must be discovered and verified, not only workplace.d2.
+    add_test(NAME history_pack_directory_scan COMMAND HistoryUnpacker --archive "${CMAKE_CURRENT_SOURCE_DIR}/../pack" scan)
+    add_test(NAME history_pack_directory_verify COMMAND HistoryUnpacker --archive "${CMAKE_CURRENT_SOURCE_DIR}/../pack" verify)
   endif()
 endif()
 if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2")
