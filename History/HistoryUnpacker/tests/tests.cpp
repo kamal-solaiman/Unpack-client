@@ -45,6 +45,38 @@ int main() {
         header.resize(68); put32(header,1); put32(header,0); put32(header,0); put32(header,1); put32(header,0);
         writeExclusive(temp,"bad-offset.d2",header); rejects([&]{Archive a(temp/"bad-offset.d2");});
         header[0]=0; writeExclusive(temp,"wrong-magic.d2",header); rejects([&]{Archive a(temp/"wrong-magic.d2");});
+        // --- archive discovery -------------------------------------------
+        check(hasArchiveName("pack/workplace.d2") && hasArchiveName("pack/WORLD.D2"),".d2 is an archive name");
+        check(hasArchiveName("pack/root") && hasArchiveName("pack/index"),"Extension-less pack names are accepted");
+        check(!hasArchiveName("pack/notes.txt") && !hasArchiveName("pack/readme.md"),"Other extensions are ignored");
+        check(isHistoryArchive(temp/"empty.d2"),"Magic sniff accepts a valid archive");
+        writeExclusive(temp,"fake.d2",Bytes{'5','c',' ','n','o','p','e'});
+        check(!isHistoryArchive(temp/"fake.d2"),"Magic sniff rejects a non-archive .d2 file");
+        check(!isHistoryArchive(temp/"nested"),"Magic sniff ignores missing files");
+        rejects([&]{resolveArchiveArgument(temp/"fake.d2");});
+        rejects([&]{resolveArchiveArgument(temp/"missing-directory");});
+        fs::create_directories(temp/"client/pack/sub");
+        auto put=[](const fs::path& target,const Bytes& data){ writeExclusive(target.parent_path(),target.filename(),data); };
+        auto valid=readFile(temp/"empty.d2");
+        put(temp/"client/pack/workplace.d2",valid);
+        put(temp/"client/pack/sub/locale_sound.d2",valid);
+        put(temp/"client/pack/not-an-archive.d2",Bytes{'n','o','p','e'});
+        put(temp/"client/pack/notes.txt",Bytes{'t','e','x','t'});
+        auto found=collectArchives(temp/"client");
+        check(found.size()==2,"Only real History archives are collected");
+        check(normalize(found.front().filename().string())=="workplace.d2","workplace.d2 keeps the primary position");
+        check(resolveArchiveArgument(temp/"client").size()==2,"A directory argument expands to every archive");
+        check(resolveArchiveArgument(temp/"client/pack/sub").size()==1,"Nested directories are scanned");
+        rejects([&]{resolveArchiveArgument(temp/"client/pack/notes.txt");});
+        std::vector<fs::path> discovered; fs::path foundExe,foundNames;
+        discoverAssets(temp/"client",discovered,foundExe,foundNames,1);
+        check(discovered.size()==2,"Asset discovery finds every archive under pack/");
+        fs::create_directories(temp/"game/pack");
+        put(temp/"game/pack/root",valid);
+        std::vector<fs::path> deep;
+        discoverAssets(temp/"game/pack",deep,foundExe,foundNames,2);
+        check(deep.size()==1 && normalize(deep.front().filename().string())=="root",
+              "Discovery walks up to the parent pack directory");
 #ifndef _WIN32
         fs::create_directory_symlink(temp,temp/"redirect");
         rejects([&]{writeExclusive(temp/"redirect","blocked.txt",Bytes{1});});

@@ -1,5 +1,6 @@
 #include "history.hpp"
 #include <algorithm>
+#include <cctype>
 #include <cstdio>
 #include <cwctype>
 #include <fstream>
@@ -196,5 +197,86 @@ void writeExclusive(const fs::path& root, const fs::path& relative, const Bytes&
     bool ok=data.empty() || std::fwrite(data.data(),1,data.size(),file)==data.size();
     if(std::fclose(file)!=0) ok=false;
     if(!ok) { std::error_code ec; fs::remove(target,ec); throw std::runtime_error("Output write failed"); }
+}
+bool isHistoryArchive(const fs::path& path) {
+    std::error_code ec;
+    if(!fs::is_regular_file(path,ec)) return false;
+    std::ifstream f(path,std::ios::binary);
+    if(!f) return false;
+    uint8_t magic[4]={};
+    f.read(reinterpret_cast<char*>(magic),4);
+    return f.gcount()==4 && u32(magic)==Magic;
+}
+bool hasArchiveName(const fs::path& path) {
+    auto extension=path.extension().string();
+    for(auto& c:extension) c=char(std::tolower(static_cast<unsigned char>(c)));
+    if(extension==".d2") return true;
+    // Metin2-style virtual-filesystem packs often have no extension at all.
+    if(!extension.empty()) return false;
+    auto stem=normalize(path.filename().string());
+    static const char* const known[]={"root","index","locale","map","sound","effect",
+                                      "npc","item","guild","season","dungeon","pack"};
+    for(const char* name:known) if(stem==name) return true;
+    return false;
+}
+static void collectFromDirectory(const fs::path& directory,std::vector<fs::path>& out,std::set<fs::path>& seen) {
+    std::error_code ec;
+    if(!fs::is_directory(directory,ec)) return;
+    for(auto it=fs::recursive_directory_iterator(directory,fs::directory_options::skip_permission_denied,ec);
+        it!=fs::recursive_directory_iterator();it.increment(ec)) {
+        if(ec) { ec.clear(); it.disable_recursion_pending(); continue; }
+        if(it.depth()>SearchDepth) { it.disable_recursion_pending(); continue; }
+        if(!it->is_regular_file(ec) || ec) continue;
+        if(!hasArchiveName(it->path()) || !isHistoryArchive(it->path())) continue;
+        auto absolute=fs::absolute(it->path()).lexically_normal();
+        if(seen.insert(absolute).second) out.push_back(it->path());
+    }
+}
+std::vector<fs::path> collectArchives(const fs::path& directory) {
+    std::vector<fs::path> out; std::set<fs::path> seen;
+    collectFromDirectory(directory/"pack",out,seen);
+    collectFromDirectory(directory,out,seen);
+    std::sort(out.begin(),out.end(),[](const fs::path& a,const fs::path& b) {
+        // Keep the historical primary archive first; everything else stays alphabetical.
+        auto primary=[](const fs::path& p) { return normalize(p.filename().string())=="workplace.d2" ? 0 : 1; };
+        int rank=primary(a)-primary(b);
+        return rank!=0 ? rank<0 : a.string()<b.string();
+    });
+    return out;
+}
+std::vector<fs::path> resolveArchiveArgument(const fs::path& path) {
+    std::error_code ec;
+    if(fs::is_directory(path,ec)) {
+        auto found=collectArchives(path);
+        require(!found.empty(),"No History D2 archive found in directory: "+path.string());
+        return found;
+    }
+    require(fs::is_regular_file(path,ec),"Cannot open archive: "+path.string());
+    require(isHistoryArchive(path),"Not a supported History D2 archive (Alt2 is not supported): "+path.string());
+    return {path};
+}
+void discoverAssets(const fs::path& start,std::vector<fs::path>& archives,fs::path& exe,fs::path& bundledNames,int levels) {
+    std::error_code ec;
+    auto p=fs::absolute(start,ec).lexically_normal();
+    if(ec) p=start;
+    std::set<fs::path> seen;
+    for(const auto& existing:archives) seen.insert(fs::absolute(existing).lexically_normal());
+    auto addArchives=[&](const fs::path& directory) {
+        for(auto& found:collectArchives(directory)) {
+            auto absolute=fs::absolute(found).lexically_normal();
+            if(seen.insert(absolute).second) archives.push_back(found);
+        }
+    };
+    for(int i=0;i<levels;++i) {
+        for(const auto& root:{p,p/"History"}) {
+            addArchives(root/"pack");
+            addArchives(root);
+            if(exe.empty() && fs::is_regular_file(root/"History2.exe",ec)) exe=root/"History2.exe";
+            for(const auto& f:{root/"data/history-names.txt",root/"HistoryUnpacker/data/history-names.txt"})
+                if(bundledNames.empty() && fs::is_regular_file(f,ec)) bundledNames=f;
+        }
+        if(p==p.parent_path()) break;
+        p=p.parent_path();
+    }
 }
 }

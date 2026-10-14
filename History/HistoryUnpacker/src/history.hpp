@@ -11,6 +11,9 @@ namespace fs = std::filesystem;
 using Bytes = std::vector<uint8_t>;
 constexpr uint32_t Magic = 0xf00fed5c;
 constexpr size_t MaxFile = 256u * 1024u * 1024u;
+// Directory depth used when a directory is given as an archive source, and when
+// assets are auto-discovered next to the executable or the working directory.
+constexpr int SearchDepth = 4;
 Bytes readFile(const fs::path& path, size_t limit = MaxFile);
 std::string normalize(std::string s);
 uint32_t nameHash(const std::string& s);
@@ -40,4 +43,19 @@ public:
 };
 fs::path safeRelative(std::string name);
 void writeExclusive(const fs::path& root, const fs::path& relative, const Bytes& data);
+// True when the file starts with the History D2 magic. Never throws.
+bool isHistoryArchive(const fs::path& path);
+// True for names this tool accepts as archives: any *.d2 file, plus the
+// extension-less virtual-filesystem pack names (root, index, locale, ...).
+bool hasArchiveName(const fs::path& path);
+// Every archive candidate under `directory`, recursive up to SearchDepth,
+// de-duplicated and sorted. `directory/pack` is scanned first so that the
+// usual primary archive keeps its historical position.
+std::vector<fs::path> collectArchives(const fs::path& directory);
+// Expands one user-supplied path: a file is used as-is, a directory is scanned.
+std::vector<fs::path> resolveArchiveArgument(const fs::path& path);
+// Search parents of `start` (and `start/pack`) for History assets. Archives are
+// appended to `archives`; the first found executable and name list are returned.
+void discoverAssets(const fs::path& start, std::vector<fs::path>& archives,
+                    fs::path& exe, fs::path& bundledNames, int levels = 7);
 }
