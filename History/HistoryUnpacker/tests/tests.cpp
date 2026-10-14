@@ -34,6 +34,8 @@ int main() {
         writeExclusive(temp,"test.txt",Bytes{'a'});
         rejects([&]{writeExclusive(temp,"test.txt",Bytes{'b'});});
         check(readFile(temp/"test.txt")==Bytes{'a'},"No overwrite");
+        writeExclusive(temp,"nested/deeper/b.txt",Bytes{'b'});
+        check(readFile(temp/"nested/deeper/b.txt")==Bytes{'b'},"Nested output directories");
         rejects([&]{readFile(temp/"test.txt",0);});
         Bytes header; put32(header,Magic); header.resize(68,0);
         writeExclusive(temp,"empty.d2",header); Archive empty(temp/"empty.d2"); check(empty.entries.empty(),"Empty valid archive");
