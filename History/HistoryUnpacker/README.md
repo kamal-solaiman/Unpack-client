@@ -14,23 +14,23 @@ The checkout contains `History2.exe` and `pack/workplace.d2`; it does **not** co
 
 **No claim is made that arbitrary EXEs can be scanned for a universally valid encryption key.** The client loader supports optional XOR masks for other archives, but that variant is not implemented here. Wrong keys/variants fail checksum validation and are not exported as successful files.
 
-## Build with Visual Studio 2022
+## Build with Visual Studio 2026
 
-Install **Desktop development with C++**, the Windows SDK and **C++ CMake tools for Windows**.
+Install Visual Studio 2026 with **Desktop development with C++**, the Windows SDK and **C++ CMake tools for Windows**. The `Visual Studio 18 2026` CMake generator requires **CMake 4.2 or newer**. If Visual Studio's bundled CMake is older, install a newer CMake and make sure it is the one on your `PATH` when running the build script.
 
 ### Open Folder
 
-1. Visual Studio → **File → Open → Folder** → select `History/HistoryUnpacker`.
+1. Visual Studio 2026 → **File → Open → Folder** → select `History/HistoryUnpacker`.
 2. Allow CMake to configure; select an x64 Release configuration.
 3. Build target `HistoryUnpacker` and run it. With no command it opens the menu.
 
 ### Generate a solution
 
-From a Developer Command Prompt, run `build-vs.bat`, or:
+From a Visual Studio 2026 Developer Command Prompt, run `build-vs.bat`, or:
 
 ```bat
 cd History\HistoryUnpacker
-cmake -S . -B build -G "Visual Studio 17 2022" -A x64
+cmake -S . -B build -G "Visual Studio 18 2026" -A x64
 cmake --build build --config Release
 ctest --test-dir build -C Release --output-on-failure
 build\Release\HistoryUnpacker.exe
