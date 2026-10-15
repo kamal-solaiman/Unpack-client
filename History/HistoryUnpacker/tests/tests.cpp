@@ -46,9 +46,6 @@ int main() {
         writeExclusive(temp,"bad-offset.d2",header); rejects([&]{Archive a(temp/"bad-offset.d2");});
         header[0]=0; writeExclusive(temp,"wrong-magic.d2",header); rejects([&]{Archive a(temp/"wrong-magic.d2");});
         // --- archive discovery -------------------------------------------
-        check(hasArchiveName("pack/workplace.d2") && hasArchiveName("pack/WORLD.D2"),".d2 is an archive name");
-        check(hasArchiveName("pack/root") && hasArchiveName("pack/index"),"Extension-less pack names are accepted");
-        check(!hasArchiveName("pack/notes.txt") && !hasArchiveName("pack/readme.md"),"Other extensions are ignored");
         check(isHistoryArchive(temp/"empty.d2"),"Magic sniff accepts a valid archive");
         writeExclusive(temp,"fake.d2",Bytes{'5','c',' ','n','o','p','e'});
         check(!isHistoryArchive(temp/"fake.d2"),"Magic sniff rejects a non-archive .d2 file");
@@ -62,15 +59,21 @@ int main() {
         put(temp/"client/pack/sub/locale_sound.d2",valid);
         put(temp/"client/pack/not-an-archive.d2",Bytes{'n','o','p','e'});
         put(temp/"client/pack/notes.txt",Bytes{'t','e','x','t'});
+        // Real Metin2-style pack names: unknown stems, no extension. The magic
+        // must decide, so these are collected even though no name list knows them.
+        put(temp/"client/pack/PC",valid);
+        put(temp/"client/pack/monster",valid);
+        put(temp/"client/pack/locale_de",valid);
+        put(temp/"client/pack/workplace",valid);
         auto found=collectArchives(temp/"client");
-        check(found.size()==2,"Only real History archives are collected");
+        check(found.size()==6,"Only real History archives are collected");
         check(normalize(found.front().filename().string())=="workplace.d2","workplace.d2 keeps the primary position");
-        check(resolveArchiveArgument(temp/"client").size()==2,"A directory argument expands to every archive");
+        check(resolveArchiveArgument(temp/"client").size()==6,"A directory argument expands to every archive");
         check(resolveArchiveArgument(temp/"client/pack/sub").size()==1,"Nested directories are scanned");
         rejects([&]{resolveArchiveArgument(temp/"client/pack/notes.txt");});
         std::vector<fs::path> discovered; fs::path foundExe,foundNames;
         discoverAssets(temp/"client",discovered,foundExe,foundNames,1);
-        check(discovered.size()==2,"Asset discovery finds every archive under pack/");
+        check(discovered.size()==6,"Asset discovery finds every archive under pack/");
         fs::create_directories(temp/"game/pack");
         put(temp/"game/pack/root",valid);
         std::vector<fs::path> deep;

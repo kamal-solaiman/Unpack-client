@@ -43,14 +43,14 @@ public:
 };
 fs::path safeRelative(std::string name);
 void writeExclusive(const fs::path& root, const fs::path& relative, const Bytes& data);
-// True when the file starts with the History D2 magic. Never throws.
+// True when the file starts with the History D2 magic and is large enough to
+// hold the 68-byte archive header. Never throws.
 bool isHistoryArchive(const fs::path& path);
-// True for names this tool accepts as archives: any *.d2 file, plus the
-// extension-less virtual-filesystem pack names (root, index, locale, ...).
-bool hasArchiveName(const fs::path& path);
-// Every archive candidate under `directory`, recursive up to SearchDepth,
-// de-duplicated and sorted. `directory/pack` is scanned first so that the
-// usual primary archive keeps its historical position.
+// Every file under `directory` that starts with the History D2 magic, recursive
+// up to SearchDepth, de-duplicated and sorted. File names and extensions are
+// never trusted, so extension-less Metin2-style packs (PC, monster, locale_de,
+// workplace, ...) are found as well as *.d2 files. `directory/pack` is scanned
+// first so that the usual primary archive keeps its historical position.
 std::vector<fs::path> collectArchives(const fs::path& directory);
 // Expands one user-supplied path: a file is used as-is, a directory is scanned.
 std::vector<fs::path> resolveArchiveArgument(const fs::path& path);

@@ -8,7 +8,12 @@ The tool is **not limited to `workplace.d2`**. It processes every History D2 arc
 
 The checkout contains `History2.exe` and `pack/workplace.d2`; it does **not** contain a separate `pack/root` file. The supplied archive holds 813 entries. Every entry was decrypted, decompressed and verified successfully. The C++ extractor's complete output was also compared against an independent Python implementation with an aggregate SHA-256 test.
 
-A client `pack` directory normally holds several archives (`workplace.d2`, `locale_*.d2`, `root`, ...). Point the tool at that directory and all of them are found by their `0xF00FED5C` magic - the file extension is never trusted, and files that only look like archives are reported as rejected instead of guessed at.
+A client `pack` directory normally holds several archives (`workplace.d2`, `locale_*.d2`,
+`root`, ...). Point the tool at that directory and all of them are found by their `0xF00FED5C`
+magic - **every file in the directory is magic-checked, so extension-less Metin2-style packs
+(`PC`, `monster`, `locale_de`, ...) are processed too, whatever they are named**. The file
+extension and name are never trusted, and files that only look like archives are reported as
+rejected instead of guessed at.
 
 - AES-256-CFB128, reset to the same archive IV for each entry.
 - Raw LZ4 blocks when stored and original sizes differ; otherwise uncompressed bytes.
@@ -43,6 +48,15 @@ build\Release\HistoryUnpacker.exe
 CMake generates `build/HistoryUnpacker.sln`. All C/C++ dependencies and their licenses are vendored. Compilation does not download anything. Python is optional, used only for the additional integration test when installed.
 
 Copy the EXE **and its `data` directory** when moving the tool elsewhere. Use `--archive` and `--exe` outside this checkout. The tool searches up to seven parent directories for the supplied History assets as a convenience.
+
+### Running the EXE by double-click
+
+The EXE is a console program. When an error occurs (for example, no archive was found), the
+message is printed and the window **stays open** ("Press Enter to close this window") so it can
+be read; scripted runs (stdin redirected or captured) never pause. If the menu itself closes
+immediately, no console input was attached: open a command prompt in the EXE folder and run it
+from there. For unattended or large jobs prefer the command line, e.g.
+`HistoryUnpacker.exe --archive "C:\Game\pack" --out "C:\unpacked" all`.
 
 Linux development build: `cmake -S . -B build && cmake --build build && ctest --test-dir build --output-on-failure`.
 
@@ -90,9 +104,10 @@ HistoryUnpacker --names "my-names.txt" manifest "names-report.csv"
 
 `--archive` accepts a **file or a directory** and may be repeated. A directory is searched
 recursively (up to four levels, `pack\` first) and every file whose first four bytes are the
-D2 magic is selected; `workplace.d2` is ordered first for familiarity. Extension does not
-matter, so a separately supplied `pack/root` works with `--archive "path\to\pack\root"`.
-Other formats - including Alt2 `root` (`0x000FED0C`) - are explicitly rejected rather than
+D2 magic is selected - **no name or extension filter is applied first**, so packs called `PC`,
+`monster`, `locale_de`, `workplace` (without `.d2`) and similar are found automatically;
+`workplace.d2` is only ordered first for familiarity. Other formats - including Alt2 `root`
+(`0x000FED0C`) - are explicitly rejected rather than
 guessed, and a directory that contains no D2 archive is an error, not an empty success.
 
 ### Output layout with several archives
@@ -157,7 +172,9 @@ Virtual game paths such as `d:/ymir work/...` become relative `d/ymir work/...` 
 
 - `src/history.*`: bounded archive parsing, AES-CFB, LZ4, checksums, candidate recovery, archive discovery and safe output.
 - `src/main.cpp`: menu, CLI, per-archive batch processing, reporting and Unicode Windows entry point.
-- `tests/tests.cpp`: NIST AES-256-CFB128 vectors, partial blocks, CRC32, LZ4 overlap and invalid streams, invalid archives, unsafe paths, overwrite protection and archive discovery (magic sniffing, name filter, directory expansion, parent search).
+- `tests/tests.cpp`: NIST AES-256-CFB128 vectors, partial blocks, CRC32, LZ4 overlap and invalid streams, invalid archives, unsafe paths, overwrite protection and archive discovery (magic-only sniffing of unknown extension-less pack names, directory expansion, parent search).
+- `tests/testarchive.cpp`: `HistoryTestArchive` helper that generates small valid History D2 archives with the same vendored primitives.
+- `tests/integration_generated.py`: stdlib-only discovery/extraction integration test over generated Metin2-style packs (runs without the proprietary fixture).
 - `tests/integration.py`: optional stdlib-only test of all 813 fixture entries, independent aggregate digest, single extraction, unresolved policy, corruption and malformed metadata, plus multi-archive discovery, batch extraction into per-archive folders and the combined manifest.
 - `FORMAT.md`: on-disk layout and client analysis notes.
 - `third_party/SOURCES.txt`: pinned third-party revisions and licenses.

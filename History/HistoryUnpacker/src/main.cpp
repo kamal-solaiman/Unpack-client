@@ -321,6 +321,7 @@ static std::string prompt(const std::string& text) {
     return line;
 }
 static int menu(Config c,const fs::path& bundled) {
+    bool firstPrompt=true;
     while(true) {
         // A missing archive must not close the menu: option 9 sets a new path.
         std::vector<fs::path> archives; std::string problem;
@@ -341,7 +342,16 @@ static int menu(Config c,const fs::path& bundled) {
                  <<"7. Verify all payloads\n8. Export filename manifest\n"
                  <<"9. Change archive / output paths\n10. Set executable / additional name lists\n"
                  <<"11. Toggle unresolved export (currently "<<(c.unresolved?"ON":"OFF")<<")\n0. Exit\n";
-        std::string choice; std::cout<<"> "; if(!std::getline(std::cin,choice)||choice=="0") return 0;
+        std::string choice; std::cout<<"> ";
+        if(!std::getline(std::cin,choice)) {
+            // Explain instead of closing silently when the window cannot receive input.
+            if(firstPrompt) std::cout<<"\nConsole input closed before any selection was made.\n"
+                "If you started this program by double-clicking and it closed immediately,\n"
+                "open a command prompt in this folder and run the EXE from there.\n";
+            return 0;
+        }
+        firstPrompt=false;
+        if(choice=="0") return 0;
         try {
             if(choice=="1") run("info","",c,bundled);
             else if(choice=="2") run("keys","",c,bundled);
@@ -398,21 +408,35 @@ static int appMain(int argc,char** argv) {
         if(command=="menu") return menu(c,bundled);
         return run(command,arg,c,bundled);
     } catch(const std::exception& ex) { std::cerr<<"Error: "<<ex.what()<<'\n'; return 1; }
+      catch(...) { std::cerr<<"Error: unknown failure\n"; return 1; }
 }
 
 #ifdef _WIN32
+#include <cstdio>
+#include <io.h>
+// A double-clicked EXE whose console closes on exit would hide any error text.
+// Keep such a window open until Enter is pressed. Scripts and captured runs
+// (stdin not a console) never pause.
+static void pauseBeforeExit(int code) {
+    if(code==0 || _isatty(_fileno(stdin))==0) return;
+    std::cout<<"\nPress Enter to close this window...";
+    std::cout.flush();
+    std::string line; std::getline(std::cin,line);
+}
 int wmain(int argc, wchar_t** argv) {
     SetConsoleCP(CP_UTF8); SetConsoleOutputCP(CP_UTF8);
     std::vector<std::string> utf8; utf8.reserve(argc);
     for(int i=0;i<argc;++i) {
         int n=WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,argv[i],-1,nullptr,0,nullptr,nullptr);
-        if(n<=0) { std::cerr<<"Invalid Unicode command line\n"; return 1; }
+        if(n<=0) { std::cerr<<"Invalid Unicode command line\n"; pauseBeforeExit(1); return 1; }
         std::string s(static_cast<size_t>(n),'\0');
         WideCharToMultiByte(CP_UTF8,WC_ERR_INVALID_CHARS,argv[i],-1,s.data(),n,nullptr,nullptr);
         s.pop_back(); utf8.push_back(std::move(s));
     }
     std::vector<char*> args; for(auto& s:utf8) args.push_back(s.data());
-    return appMain(argc,args.data());
+    int code=appMain(argc,args.data());
+    pauseBeforeExit(code);
+    return code;
 }
 #else
 int main(int argc, char** argv) { return appMain(argc,argv); }

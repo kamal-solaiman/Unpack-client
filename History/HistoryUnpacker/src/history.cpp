@@ -201,23 +201,15 @@ void writeExclusive(const fs::path& root, const fs::path& relative, const Bytes&
 bool isHistoryArchive(const fs::path& path) {
     std::error_code ec;
     if(!fs::is_regular_file(path,ec)) return false;
+    // 68 bytes is the smallest possible archive (header only). Checking the size
+    // first avoids opening every small file during directory scans.
+    auto size=fs::file_size(path,ec);
+    if(ec || size<68) return false;
     std::ifstream f(path,std::ios::binary);
     if(!f) return false;
     uint8_t magic[4]={};
     f.read(reinterpret_cast<char*>(magic),4);
     return f.gcount()==4 && u32(magic)==Magic;
-}
-bool hasArchiveName(const fs::path& path) {
-    auto extension=path.extension().string();
-    for(auto& c:extension) c=char(std::tolower(static_cast<unsigned char>(c)));
-    if(extension==".d2") return true;
-    // Metin2-style virtual-filesystem packs often have no extension at all.
-    if(!extension.empty()) return false;
-    auto stem=normalize(path.filename().string());
-    static const char* const known[]={"root","index","locale","map","sound","effect",
-                                      "npc","item","guild","season","dungeon","pack"};
-    for(const char* name:known) if(stem==name) return true;
-    return false;
 }
 static void collectFromDirectory(const fs::path& directory,std::vector<fs::path>& out,std::set<fs::path>& seen) {
     std::error_code ec;
@@ -227,7 +219,9 @@ static void collectFromDirectory(const fs::path& directory,std::vector<fs::path>
         if(ec) { ec.clear(); it.disable_recursion_pending(); continue; }
         if(it.depth()>SearchDepth) { it.disable_recursion_pending(); continue; }
         if(!it->is_regular_file(ec) || ec) continue;
-        if(!hasArchiveName(it->path()) || !isHistoryArchive(it->path())) continue;
+        // The D2 magic alone decides; file names and extensions are never trusted,
+        // so Metin2-style packs (PC, monster, locale_de, workplace, ...) are found too.
+        if(!isHistoryArchive(it->path())) continue;
         auto absolute=fs::absolute(it->path()).lexically_normal();
         if(seen.insert(absolute).second) out.push_back(it->path());
     }
@@ -248,7 +242,8 @@ std::vector<fs::path> resolveArchiveArgument(const fs::path& path) {
     std::error_code ec;
     if(fs::is_directory(path,ec)) {
         auto found=collectArchives(path);
-        require(!found.empty(),"No History D2 archive found in directory: "+path.string());
+        require(!found.empty(),"No History D2 archive found in directory (every file was checked for the "
+            "F00FED5C magic, up to "+std::to_string(SearchDepth)+" levels deep): "+path.string());
         return found;
     }
     require(fs::is_regular_file(path,ec),"Cannot open archive: "+path.string());
@@ -268,6 +263,7 @@ void discoverAssets(const fs::path& start,std::vector<fs::path>& archives,fs::pa
         }
     };
     for(int i=0;i<levels;++i) {
+        const size_t before=archives.size();
         for(const auto& root:{p,p/"History"}) {
             addArchives(root/"pack");
             addArchives(root);
@@ -275,6 +271,9 @@ void discoverAssets(const fs::path& start,std::vector<fs::path>& archives,fs::pa
             for(const auto& f:{root/"data/history-names.txt",root/"HistoryUnpacker/data/history-names.txt"})
                 if(bundledNames.empty() && fs::is_regular_file(f,ec)) bundledNames=f;
         }
+        // Documented behavior: stop at the first level that yields archives, so
+        // unrelated archives from higher parent directories are never mixed in.
+        if(archives.size()>before) break;
         if(p==p.parent_path()) break;
         p=p.parent_path();
     }

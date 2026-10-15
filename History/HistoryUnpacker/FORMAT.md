@@ -22,12 +22,13 @@ repository (`alt2/data/root`, magic `0c ed 0f 00`) is a different format and is 
 
 `--archive` accepts a file or a directory and may be repeated. A directory is searched
 recursively up to four levels, with `<directory>/pack` scanned before the directory itself, and
-`workplace.d2` is sorted first so it keeps its historical position. Candidate names are any
-`*.d2` file plus the extension-less pack names (`root`, `index`, `locale`, `map`, `sound`,
-`effect`, `npc`, `item`, `guild`, `season`, `dungeon`, `pack`); each candidate is then confirmed
-by the magic, so a misnamed or foreign file is skipped instead of guessed at. Without
-`--archive`, the tool searches the working directory and then the executable's directory, up to
-seven parents each, stopping at the first level that yields archives.
+`workplace.d2` is sorted first so it keeps its historical position. **Every regular file of at
+least 68 bytes is checked for the D2 magic - file names and extensions are never used to
+decide.** This finds Metin2-style extension-less packs whatever they are called (`PC`,
+`monster`, `locale_de`, `workplace`, `root`, ...), so pointing the tool at the client `pack`
+directory processes all of its archives, not just those whose names a list happens to know.
+Without `--archive`, the tool searches the working directory and then the executable's
+directory, up to seven parents each, stopping at the first level that yields archives.
 
 Each archive keeps its own key/IV, entry table and output folder; nothing is merged across
 archives, and a duplicate filename hash in two different archives is not an error (only within

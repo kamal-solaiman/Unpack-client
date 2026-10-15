@@ -22,6 +22,19 @@ if(BUILD_TESTING)
   add_executable(HistoryTests tests/tests.cpp)
   target_link_libraries(HistoryTests PRIVATE history_core)
   add_test(NAME core COMMAND HistoryTests)
+  # Generates small valid History D2 archives so integration tests can run
+  # without the proprietary fixture. Must use the same AES configuration.
+  add_executable(HistoryTestArchive tests/testarchive.cpp)
+  target_link_libraries(HistoryTestArchive PRIVATE history_core)
+  target_include_directories(HistoryTestArchive PRIVATE third_party/aes third_party/xxhash)
+  target_compile_definitions(HistoryTestArchive PRIVATE AES256=1 CBC=0 CTR=0 ECB=1)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_FOUND)
+    # Self-contained discovery test with Metin2-style pack names (no fixture needed).
+    add_test(NAME history_generated_discovery COMMAND "${Python3_EXECUTABLE}"
+      "${CMAKE_CURRENT_SOURCE_DIR}/tests/integration_generated.py"
+      "$<TARGET_FILE:HistoryUnpacker>" "$<TARGET_FILE:HistoryTestArchive>")
+  endif()
   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2")
     add_test(NAME history_sample_verify COMMAND HistoryUnpacker --archive "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2" verify)
     # The pack directory itself is a valid --archive argument: every D2 archive in it
@@ -38,3 +51,4 @@ if(BUILD_TESTING AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2")
       "${CMAKE_CURRENT_SOURCE_DIR}/../pack/workplace.d2")
   endif()
 endif()
+
